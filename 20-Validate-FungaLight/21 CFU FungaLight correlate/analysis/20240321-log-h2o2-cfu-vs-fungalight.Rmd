@@ -113,7 +113,7 @@ gs_pop_add(gs, outlier.gate, parent = "root")
 recompute(gs)
 ```
 
->Gate for singlets
+> Gate for singlets
 
 ```{r fig.width=4, fig.height=4}
 scPars <- ggcyto_par_set(limits = list(x = c(0,1e6), y = c(30,300)))
@@ -208,7 +208,7 @@ for(date in c("021424", "021624", "021724")){
 }
 ```
 
-```{r eval=FALSE, include=FALSE}
+```{r}
 gs_pop_add(gs, inter.gate, parent = "singlet", name = "intermediate")
 recompute(gs)
 ```
@@ -247,6 +247,29 @@ p.exp <- plot_grid(
 )
 ggsave("../output/20250115-gating-strategy-example.png", p.exp,
        height = 2.2, width = 3.4)
+```
+
+## Explore cell size difference in hydrogen peroxide treated cells
+This is based on Jinye's suggestion:
+> I am wondering is whether the cell size and granularity would affect the staining in different ways among species. Thus, I think it makes sense to plot the FL on FSC or SSC and perform a linear regression analysis for each species, if there is no significant difference, we can say the cell property of different species does not affect the staining in different ways. This is a simplified or adapted idea from PMID: 21952134.
+
+Let's plot the distribution of FSC.H as a proxy for cell size
+```{r}
+mult_format <- function() {
+     function(x) format(x/10000,digits = 2) 
+}
+```
+
+```{r}
+subset <- with(pData(gs), Treatment != "5C")
+p1 <- ggcyto(gs[subset], aes(x = FSC.H), subset = "singlet") + 
+  ggridges::geom_density_ridges(aes(y = Treatment),
+                                fill = "forestgreen", alpha = 0.8) + 
+  scale_x_continuous(labels = mult_format(), name = "FSC.H x 10000") +
+  facet_grid(Date ~ Dye) + labs(title = NULL)
+p1
+ggsave("../output/20250226-log-h2o2-cell-size-distribution-compare.png",
+       width = 4, height = 4)
 ```
 
 # Extract gated stats and MFI
@@ -316,15 +339,18 @@ Here are the raw cfu data
 cfu_raw <- read_tsv("../input/20240214-0405-h2o2-Cg-CFU-raw.tsv",
                     col_types = "cccccciiii", comment = "#")
 cfu_calc <- cfu_raw %>% 
-  select(Date, Treatment = H2O2_mM, Group, Dilution, Total) %>% 
+  select(Date, Treatment = H2O2_mM, Group, Dilution, Raw_count = Total) %>% 
   mutate(Date = ymd(Date),
          Treatment = fct_inseq(Treatment),
-         CFU = Dilution * Total) %>% 
+         CFU = Dilution * Raw_count) %>% 
   # group by Date to calculate the ratio of MO to MM
   group_by(Date) %>% 
   mutate(p_live = CFU / CFU[Group == "MM"]) %>% 
   # we only need the log dilution series
   dplyr::filter(Date < ymd("20240301"))
+
+# export the data for paper
+write_tsv(cfu_calc, file = "../output/20250226-log-h2o2-cfu-estimate.tsv")
 ```
 ## Calculate survival from PI alone or FungaLight
 
@@ -333,7 +359,7 @@ For both PI alone and FungaLight, we will calculate the percent live events. For
 dye_based <- gated_freq %>% 
   # record the total number of events as the count of singlets
   group_by(Date, Treatment, Dye) %>% 
-  mutate(total = count[pop == "singlet"]) %>% 
+  mutate(total_event_count = count[pop == "singlet"]) %>% 
   # now we don't need the singlet population and the count variable
   select(-count) %>% 
   dplyr::filter(pop != "singlet") %>%
@@ -342,7 +368,10 @@ dye_based <- gated_freq %>%
   # two new variables out of the percentage variable
   pivot_wider(names_from = pop, values_from = perc, names_prefix = "p_") %>% 
   mutate(p_dead = 1 - p_live - p_intermediate) %>% 
-  relocate(p_live, .after = total)
+  relocate(p_live, .after = total_event_count)
+
+# export the data for paper
+write_tsv(dye_based, file = "../output/20250226-log-h2o2-fgl-estimate.tsv")
 ```
 ```
 PI <- final %>% 
