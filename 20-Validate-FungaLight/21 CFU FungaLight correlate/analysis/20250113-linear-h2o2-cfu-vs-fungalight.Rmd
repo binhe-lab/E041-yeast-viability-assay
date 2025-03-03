@@ -267,15 +267,18 @@ Here are the raw cfu data
 cfu_raw <- read_tsv("../input/20240214-0405-h2o2-Cg-CFU-raw.tsv",
                     col_types = "cccccciiii", comment = "#")
 cfu_calc <- cfu_raw %>% 
-  select(Date, Treatment = H2O2_mM, Group, Dilution, Total) %>% 
+  select(Date, Treatment = H2O2_mM, Group, Dilution, Raw_count = Total) %>% 
   mutate(Date = ymd(Date),
          Treatment = fct_inseq(Treatment),
-         CFU = Dilution * Total) %>% 
+         CFU = Dilution * Raw_count) %>% 
   # we only need the linear range experiment
   dplyr::filter(Date > ymd("20240401")) %>% 
   # group by Date to calculate the ratio of MO to MM
   group_by(Date) %>% 
   mutate(p_live = CFU / CFU[Group == "MM"])
+
+# export the data for paper
+write_tsv(cfu_calc, file = "../output/20250226-linear-h2o2-cfu-estimates.tsv")
 ```
 
 ## Calculate survival from FungaLight
@@ -285,7 +288,7 @@ We calculate the percent live as the FGL survival. We also record the percent in
 dye_based <- gated_freq %>% 
   # record the total number of events as the count of singlets
   group_by(Date, Treatment) %>% 
-  mutate(total = count[pop == "singlet"]) %>% 
+  mutate(total_event_count = count[pop == "singlet"]) %>% 
   # now we don't need the singlet population and the count variable
   select(-count) %>% 
   dplyr::filter(pop != "singlet") %>%
@@ -294,7 +297,10 @@ dye_based <- gated_freq %>%
   # two new variables out of the percentage variable
   pivot_wider(names_from = pop, values_from = perc, names_prefix = "p_") %>% 
   mutate(p_dead = 1 - p_live - p_intermediate) %>% 
-  relocate(p_live, .after = total)
+  relocate(p_live, .after = total_event_count)
+
+# export for paper
+write_tsv(dye_based, file = "../output/20250226-linear-h2o2-fgl-estimate.tsv")
 ```
 ```
 PI <- final %>% 
