@@ -1,0 +1,445 @@
+---
+title: "PI vs PI+SYTO9 Log Correlation"
+output: html_document
+date: "2023-12-18"
+---
+
+# Background
+This is the flow cytometry data for post treatment phase Ca stained with PI/PI+SYTO9, and run through flow cytometry (details in ELN), and plated for CFU. The goal is to establish FungaLight's distinguishing power and correlate with plating based method.
+
+```{r setup, message=FALSE}
+library(tidyverse)
+library(flowCore)
+library(flowClust)
+library(openCyto)
+library(ggcyto)
+library(cowplot)
+require(ggridges)
+library(PTXQC)
+library(ggplot2)
+```
+
+# Import data
+> FCS files are stored in RDSS/user/flow cytometry, FCS is read and write into an input tsv table. The tsv file is avaliable from the Input folder.
+
+```{r}
+# use relative path to make it easier for collaboration
+data.path = "./input/20240318-0323_Ca_Log_FGL"
+dat.f1g <- read.flowSet(path = data.path, transformation = FALSE,  # the original values are already linearized. 
+                   emptyValue = FALSE,  alter.names = TRUE,   # change parameter names to R format
+                   column.pattern = ".H|FSC|SSC") # only load the height variables for the fluorescent parameters
+```
+
+Simplify the sample names
+
+```{r}
+oriNames <- sampleNames(dat.f1g)
+tmp <- str_split(oriNames, pattern = "[ _]+", simplify = TRUE)[,c(1, 7, 8)]
+colnames(tmp) <- c("Date", "Treatment", "Dye") 
+sample <- data.frame(tmp) %>% 
+  mutate(
+    Dye = ifelse(Dye == "p.fcs", "PI", ifelse(Dye == "b.fcs", "Both", Dye)), 
+    Treatment = factor(Treatment, levels = c(0, 0.6, 6, 1000)))
+rownames(sample) <- oriNames
+pData(dat.f1g) <- sample
+print(pData(dat.f1g))
+#write_tsv(pData(dat.f1g), file = "/space/htang5/Documents/FUN1_data_analysis/biol-4386-course-project-htang5/Methods Paper Writing/02-FungaLight-Distinguishing-Power/Input/20240325-Ca-PI-Both-Log-Correlation-raw-data-ht.tsv")
+```
+
+# Correting green (BL1) and red (BL3) fluorescence by normalization to cell size, will move it after prepossing the data (gated out outliers and spurious events)(Creator: JY Liang)
+## There is no BL1.A or BL3.A data, only BL1.H and BL3.H. I cannot use the formula: Normalization GFP by cell size: NormFL1.A = FL1.A * sqrt(1/(FSC.A*SSC.A))
+## Instead, I can plot the BL1.H or BL3.H against the FSC and SSC (should choose area over height), then generate a regression model of BL1.H (or BL3.h) on SSC and SSC for each sample in Ca and the Sc (in other datasets), if there is no significant
+
+
+# before gating out outliers and adjusted for singlets
+
+```{r}
+#Extract the first sample (flowFrame) matrix from the flowSet dat.f1g:
+sample_data <- dat.f1g[[1]]
+event_data <- as.data.frame(exprs(sample_data))
+
+
+plot_scatter <- function(data, x_var, y_var, color, x_label, y_label, title) {
+  ggplot(data, aes_string(x = x_var, y = y_var)) +
+    geom_point(color = color, alpha = 0.5) +
+    ggtitle(title) +
+    xlab(x_label) +
+    ylab(y_label) +
+    theme_minimal()
+}
+
+plot_scatter(event_data, "FSC.H", "BL1.H", "darkgreen", "FSC.H (Cell Size)", "BL1.H (GFP Intensity)", "FSC.H vs BL1.H")
+
+plot_scatter(event_data, "SSC.H", "BL1.H", "lightgreen", "SSC.H (Cell Granularity)", "BL1.H (GFP Intensity)", "SSC.H vs BL1.H")
+
+plot_scatter(event_data, "FSC.H", "BL3.H", "darkred", "FSC.H (Cell Size)", "BL3.H (GFP Intensity)", "FSC.H vs BL3.H")
+
+plot_scatter(event_data, "SSC.H", "BL3.H", "red2", "SSC.H (Cell Granularity)", "BL3.H (GFP Intensity)", "SSC.H vs BL3.H")
+
+
+
+```
+
+
+
+
+# Gatting for Singlets
+>The following gaphing steps are used to gate singlets by FSC and SSC values. Only singlets are included in analysis.
+
+>Gate for outlier 
+
+```{r}
+outlier.gate <- rectangleGate(filterId = "-outlier", "FSC.H" = c(1.2e5, 1e6), "SSC.H" = c(1e2, 1e6))
+ggcyto(dat.f1g [1], aes(x = FSC.H, y = SSC.H), subset = "root") +
+  geom_hex(bins = 64) + geom_gate(outlier.gate) + facet_wrap(~name, ncol = 2) + ggcyto_par_set(limits = "instrument")
+```
+Add gate to GS
+```{r}
+gs <- GatingSet(dat.f1g) # create a GatingSet
+gs_pop_add(gs, outlier.gate, parent = "root")
+recompute(gs)
+```
+
+>Gate for singlets
+
+```{r fig.width=4, fig.height=4}
+scPars <- ggcyto_par_set(limits = list(x = c(0,1e6), y = c(30,300)))
+ex <- Subset(dat.f1g[[1]], outlier.gate)
+polygon <- matrix(c(1e5, 1e5, 1e6, 1e6, 
+                    60, 105, 135,60), ncol = 2)
+colnames(polygon) <- c("FSC.H", "FSC.W")
+singlet.gate <- polygonGate(filterId = "singlet", boundaries = polygon)
+ggcyto(ex, aes(x = FSC.H, y = FSC.W)) + geom_hex(bins = 128) + geom_gate(singlet.gate) + geom_stats() + scPars
+```
+
+Add this gate to the gatingSet
+```{r}
+gs_pop_add(gs, singlet.gate, parent = "-outlier", name = "singlet")
+recompute(gs)
+```
+> Visualize the distribution of cell size & the relationship between fluorescence and cell size parameters (Creator: JY)
+Visualize cell size parameters with Fluorescence
+
+```{r}
+#removes outlier
+filtered_outlier <- Subset(dat.f1g[[1]],outlier.gate)
+
+#filter for singlet
+filtered_singlets <- Subset(filtered_outlier, singlet.gate)
+
+#Convert to dataframe
+df1 <- as.data.frame(exprs(filtered_singlets))
+
+# visualize the gated distribution
+plot_scatter(df1, "FSC.H", "BL1.H", "darkgreen", "FSC.H (Cell Size)", "BL1.H (GFP Intensity)", "FSC.H vs BL1.H")
+
+plot_scatter(df1, "SSC.H", "BL1.H", "lightgreen", "SSC.H (Cell Granularity)", "BL1.H (GFP Intensity)", "SSC.H vs BL1.H")
+
+plot_scatter(df1, "FSC.H", "BL3.H", "darkred", "FSC.H (Cell Size)", "BL3.H (GFP Intensity)", "FSC.H vs BL3.H")
+
+plot_scatter(df1, "SSC.H", "BL3.H", "red2", "SSC.H (Cell Granularity)", "BL3.H (GFP Intensity)", "SSC.H vs BL3.H")
+```
+
+visualize the difference between _b and _p, what is there difference?
+```{r}
+test_data <- dat.f1g[[2]]
+df_test <- as.data.frame(exprs(test_data))
+
+
+
+```
+
+
+> Gate for Red Negative Population
+This is the live population with red fluorescence below 10^2.2
+
+```{r fig.width=4, fig.height=4}
+scPars <- ggcyto_par_set (limits = list(x = c(0, 1e6), y = c(0, 1e6)))
+ex <- Subset(dat.f1g[[1]], singlet.gate)
+polygon <- matrix(c(0, 10^5, 10^5, 0,
+                    10^2.5, 10^2.5, 0, 0), ncol = 2)
+colnames(polygon) <- c("BL1.H", "BL3.H")
+Nlive.gate <- polygonGate(filterId = "Nlive", boundaries = polygon)
+ggcyto(ex, aes(x = BL1.H, y = BL3.H)) + geom_hex(bins = 128) + geom_gate(live.gate) + scPars + scale_x_logicle() + scale_y_logicle()
+```
+
+
+Add this gate to the gatingSet
+
+```{r eval=FALSE, include=FALSE}
+gs_pop_add(gs, Nlive.gate, parent = "singlet", name = "Nlive")
+recompute(gs)
+```
+
+> Gate for Red Positive Intermediates
+This is the intermediate population on the right side
+
+```{r fig.width=4, fig.height=4}
+scPars <- ggcyto_par_set(limits = list(x = c(0,1e6), y = c(0,1e6)))
+ex <- Subset(dat.f1g, singlet.gate)
+polygon <- matrix(c(10^5, 10^3,10^5,
+                    10^2.2, 10^2.2, 10^4), ncol = 2)
+colnames(polygon) <- c("BL1.H", "BL3.H")
+inter.gate <- polygonGate(filterId = "inter", boundaries = polygon)
+ggcyto(ex, aes(x = BL1.H, y = BL3.H)) + geom_hex(bins = 128) + geom_gate(inter.gate) + geom_stats() + scPars + scale_x_logicle() + scale_y_logicle() + facet_grid (Treatment ~ Dye)
+```
+Add this gate to the gatingSet
+
+```{r eval=FALSE, include=FALSE}
+gs_pop_add(gs, inter.gate, parent = "singlet", name = "inter")
+recompute(gs)
+```
+
+> Gate for Red Positive Dead
+This is the dead population on the right side
+
+```{r fig.width=4, fig.height=4}
+scPars <- ggcyto_par_set(limits = list(x = c(0,1e6), y = c(0,1e6)))
+ex <- Subset(dat.f1g, singlet.gate)
+polygon <- matrix(c(10^3, 10^2.5,10^3, 10^5,
+                    10^4.5, 10^2.2, 10^2.2, 10^4), ncol = 2)
+colnames(polygon) <- c("BL1.H", "BL3.H")
+dead.gate <- polygonGate(filterId = "dead", boundaries = polygon)
+ggcyto(ex, aes(x = BL1.H, y = BL3.H)) + geom_hex(bins = 128) + geom_gate(dead.gate) + geom_stats() + scPars + scale_x_logicle() + scale_y_logicle() + facet_grid (Treatment ~ Dye)
+```
+Add this gate to the gatingSet
+
+```{r eval=FALSE, include=FALSE}
+gs_pop_add(gs, dead.gate, parent = "singlet", name = "dead")
+recompute(gs)
+```
+
+> Gate for Dead Population - PI only
+RP population is defined by having red fluorescence value above 10^2.15.
+
+```{r fig.width=4, fig.height=4}
+scPars <- ggcyto_par_set(limits = list(x = c(0,1e6), y = c(0,1e6)))
+ex <- Subset(dat.f1g[[1]], singlet.gate)
+polygon <- matrix(c(0, 10^3.6, 10^3.6, 0,
+                    10^2.15, 10^2.15, 1e6, 1e6), ncol = 2)
+colnames(polygon) <- c("BL1.H", "BL3.H")
+PIdead.gate <- polygonGate(filterId = "PIdead", boundaries = polygon)
+ggcyto(ex, aes(x = BL1.H, y = BL3.H)) + geom_hex(bins = 128) + geom_gate(PIdead.gate) + geom_stats() + scPars + scale_x_logicle() + scale_y_logicle() 
+```
+Add this gate to the gatingSet
+
+```{r eval=FALSE, include=FALSE}
+gs_pop_add(gs, PIdead.gate, parent = "singlet", name = "PIDead")
+recompute(gs)
+```
+
+>Exported gated event counts
+
+```{r}
+gated_stats_f1g <- gs_pop_get_stats(gs) %>% 
+  as_tibble() %>% 
+  mutate(pop = gsub(".*/", "", pop), pop = gsub("-outlier", "cells", pop)) %>% 
+  pivot_wider(names_from = pop, names_prefix = "n_", values_from = count)
+gated_stats_f1g$percent_Live <- gated_stats_f1g$n_Nlive / gated_stats_f1g$n_singlet
+gated_data <- cbind(pData(dat.f1g), gated_stats_f1g) %>% 
+    as.tibble() %>% relocate(name, .after = last_col())
+write_tsv(gated_data, file = "./input/20240704-Ca-PI-Both-Distinguishing-Power-gated-ht.tsv")
+print(gated_data)
+```
+# Extract MFI of intermediate population green channel
+>MFI are extracted and wrote into tsv. The tsv is stored in the input folder.
+
+```{r}
+interpop <- Subset(dat.f1g, inter.gate)
+tmp <- fsApply(interpop, each_col, median)
+combined_data <- cbind(gated_data, tmp) %>%
+    as.tibble() %>% relocate(name, .after = last_col())
+
+#write_tsv(combined_data, file = "./input/20240124_four_variable_matrix.tsv")
+print(combined_data)
+```
+
+
+# Output Graph Production
+## Before cell size normalization
+>Several output graphs are produced, and are stored in the Output folder.
+
+```{r}
+sub <- dat.f1g[pData(dat.f1g)$Dye == "Both" & pData(dat.f1g)$Date == "032324"] 
+sg <- Subset(sub, singlet.gate)
+p2 <- sg %>% 
+  ggcyto(aes(x = "BL1.H", y = "BL3.H")) + 
+  geom_hex(bins = 80, aes(fill = ..ncount..)) + 
+  facet_grid(Dye ~ Treatment, 
+             labeller = as_labeller(c("0" = "0 mM", "0.6" = "0.6 mM", "6" = "6 mM", "1000" = "1000 mM",
+                                       "PI" = "PI only", "SYTO9_first" = "SYTO9+PI Costain", "PI_first" = "PI first"))) + 
+  theme_minimal()
+p2 + scale_x_logicle() + scale_y_logicle() +
+  xlab("FungaLight Green Fluorescence") + ylab("FungaLight Red Fluorescence") +
+  panel_border(color = "black", size = 1) +
+  theme(axis.line = element_blank(),
+        strip.background = element_blank(),
+        axis.text.x = element_text(size = 10, color = "black"),  # Adjust size and face (bold)
+        axis.text.y = element_text(size = 10, color = "black"),
+        axis.title.x = element_text(size = 16, face = "bold"),
+        axis.title.y = element_text(size = 16, face = "bold")
+        ) + 
+  theme(strip.text = element_text(size = 9, face = "bold")) 
+#ggsave("./output/20240117-dye-Order-Flow-Plot.png", width = 7, height = 5)
+```
+```{r}
+combined_data <- read_tsv("./input/20240325-Ca-PI-Both-Distinguishing-Power-gated-CFU.tsv") %>% 
+mutate(Treatment = factor(Treatment, levels = c(0, "5C", 0.6, 6, 1000)))
+
+p1 <- combined_data %>% 
+  dplyr::filter(Dye == "PI") %>% 
+   dplyr::filter(!(Treatment %in% c("5C", "0")))  %>%
+  ggplot(aes(x = Treatment, y = percent_Live))  + 
+  geom_bar(stat = "summary", fun = "mean", fill = "lightgreen", alpha = 0.7) +
+  geom_point(size = 3, position = position_jitter(0.2)) + 
+   scale_y_continuous(labels = scales::percent_format()) +
+  labs(x = bquote(H[2]*O[2]~(mM)), y = "% Red Negative") +
+  ggtitle("PI only") +  
+  theme(plot.title = element_text(hjust = 30)) +
+  theme_cowplot(font_size = 16) 
+  
+
+p2 <- combined_data %>% 
+  dplyr::filter(Dye == "Both") %>% 
+   dplyr::filter(!(Treatment %in% c("5C", "0")))  %>%
+  ggplot(aes(x = Treatment, y = CFU_Survival))  + 
+  geom_bar(stat = "summary", fun = "mean", fill = "lightgreen", alpha = 0.7) +
+  geom_point(size = 3, position = position_jitter(0.2)) + 
+   scale_y_continuous(labels = scales::percent_format()) +
+  labs(x = bquote(H[2]*O[2]~(mM)), y = "% Viable") +
+  ggtitle("CFU") +  
+  theme_cowplot(font_size = 16) 
+  theme(plot.title = element_text(hjust = 15))
+
+p3 <- combined_data %>% 
+  dplyr::filter(Dye == "Both") %>% 
+   dplyr::filter(!(Treatment %in% c("5C", "0")))  %>%
+  ggplot(aes(x = Treatment, y = percent_Live))  + 
+  geom_bar(stat = "summary", fun = "mean", fill = "lightgreen", alpha = 0.7) +
+  geom_point(size = 3, position = position_jitter(0.1)) + 
+  labs(x = bquote(H[2]*O[2]~(mM)), y = "% Live Population") +
+  ggtitle("FungaLight") +  
+  theme(plot.title = element_text(hjust = 15)) +
+  theme_cowplot(font_size = 16) 
+
+combined_plot <- plot_grid(p1, p2, p3, nrow = 1, ncol = 3, common.legend = TRUE, align = 'hv')
+
+print(combined_plot)
+#ggsave("../output/20240427-Ca-Log-Gated.png")
+```
+
+
+```{r}
+combined_data1 <- read_tsv("./input/20240619-Ca-PI-Both-Distinguishing-Power-gated-CFU.tsv")
+print(combined_data1)
+```
+
+
+```{r}
+p1 <- combined_data1 %>% 
+  dplyr::mutate(Treatment = as.character(Treatment)) %>%
+  mutate(Treatment = factor(Treatment, levels = c(0, 0.6, 6, 1000))) %>%
+  dplyr::filter(!(Treatment %in% c("0"))) %>%
+  ggplot(aes(x = Treatment, y = Survival)) + 
+  geom_bar(stat = "summary", fun = "mean", fill = "lightgreen", alpha = 0.7) +
+  geom_point(size = 3, position = position_jitter(0.2)) + 
+  scale_y_continuous(labels = scales::percent_format()) +
+  labs(x = bquote(H[2]*O[2]~(mM)), y = "% Live") +
+  theme_cowplot(font_size = 20) +
+  facet_wrap(~ Method)
+
+p1
+
+ggsave("./output/20240618-Ca-Log-Gated.png", width = 7, height = 4)
+```
+
+```{r}
+combined_data1 <- read_tsv("C:/Users/tangh/Downloads/20240325-Ca-PI-Both-Distinguishing-Power-gated-CFU.tsv") # where it is
+print(combined_data1)
+```
+
+```{r}
+p1 <- combined_data1 %>% 
+  dplyr::mutate(Treatment = as.character(Treatment)) %>%
+  mutate(Treatment = factor(Treatment, levels = c(0, 0.6, 6, 1000))) %>%
+  dplyr::filter(!(Treatment %in% c("0"))) %>%
+  ggplot(aes(x = Treatment, y = Survival)) + 
+  geom_bar(stat = "summary", fun = "mean", fill = "lightgreen", alpha = 0.7) +
+  geom_point(size = 3, position = position_jitter(0.2)) + 
+  scale_y_continuous(labels = scales::percent_format()) +
+  labs(x = bquote(H[2]*O[2]~(mM)), y = "% Live") +
+  theme_cowplot(font_size = 20) +
+  facet_wrap(~ Method)
+
+p1
+
+ggsave("../output/20240704-Ca-Log-Gated.png", width = 7, height = 4)
+```
+
+Statistical Test
+
+```{r}
+# Filter the data
+filtered_data <- combined_data1 %>% dplyr::filter(Method %in% c("CFU"))  %>%  mutate(Treatment = as.factor(Treatment))
+
+# Fit the linear model
+result <- aov(Survival ~ Treatment, data = filtered_data)
+
+
+# Perform ANOVA
+anova_result <- summary(result)
+
+# Perform Tukey's HSD test
+tukey_result <- TukeyHSD(result)
+
+# Print the ANOVA result
+print(anova_result)
+
+# Print the Tukey's HSD test result
+print(tukey_result)
+
+```
+```{r}
+# Filter the data
+filtered_data <- combined_data1 %>% dplyr::filter(Method %in% c("FungaLight"))  %>%  mutate(Treatment = as.factor(Treatment))
+
+# Fit the linear model
+result <- aov(Survival ~ Treatment, data = filtered_data)
+
+
+# Perform ANOVA
+anova_result <- summary(result)
+
+# Perform Tukey's HSD test
+tukey_result <- TukeyHSD(result)
+
+# Print the ANOVA result
+print(anova_result)
+
+# Print the Tukey's HSD test result
+print(tukey_result)
+
+```
+
+
+```{r}
+# Filter the data
+filtered_data <- combined_data1 %>% dplyr::filter(Method %in% c("PI"))  %>%  mutate(Treatment = as.factor(Treatment))
+
+# Fit the linear model
+result <- aov(Survival ~ Treatment, data = filtered_data)
+
+
+# Perform ANOVA
+anova_result <- summary(result)
+
+# Perform Tukey's HSD test
+tukey_result <- TukeyHSD(result)
+
+# Print the ANOVA result
+print(anova_result)
+
+# Print the Tukey's HSD test result
+print(tukey_result)
+
+```
