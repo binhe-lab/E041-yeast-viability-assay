@@ -1,0 +1,25 @@
+Date	Treatment	Dye	sample	n_root	n_cells	n_singlet	n_Nlive	n_inter	n_dead	n_PIDead	percent_Live	name
+031824	0.6	Both	031824_Ca Log Corre_Experiment_Plate_0.6_b.fcs	30000	20042	11285	7174	7804	164	768	0.6357111209570226	031824_Ca Log Corre_Experiment_Plate_0.6_b.fcs
+031824	0.6	PI	031824_Ca Log Corre_Experiment_Plate_0.6_p.fcs	30000	21004	11321	11231	0	0	116	0.992050172246268	031824_Ca Log Corre_Experiment_Plate_0.6_p.fcs
+031824	0	Both	031824_Ca Log Corre_Experiment_Plate_0_b.fcs	30000	27607	16801	9188	15707	61	885	0.5468722099875007	031824_Ca Log Corre_Experiment_Plate_0_b.fcs
+031824	0	PI	031824_Ca Log Corre_Experiment_Plate_0_p.fcs	30000	28287	17670	17654	0	0	38	0.9990945104697226	031824_Ca Log Corre_Experiment_Plate_0_p.fcs
+031824	1000	Both	031824_Ca Log Corre_Experiment_Plate_1000_b.fcs	30000	24954	11492	170	195	11275	9587	0.014792899408284023	031824_Ca Log Corre_Experiment_Plate_1000_b.fcs
+031824	1000	PI	031824_Ca Log Corre_Experiment_Plate_1000_p.fcs	30000	24458	11896	250	0	1	11665	0.02101546738399462	031824_Ca Log Corre_Experiment_Plate_1000_p.fcs
+031824	6	Both	031824_Ca Log Corre_Experiment_Plate_6_b.fcs	30000	23858	12884	3002	12319	323	301	0.2330021732381248	031824_Ca Log Corre_Experiment_Plate_6_b.fcs
+031824	6	PI	031824_Ca Log Corre_Experiment_Plate_6_p.fcs	30000	23617	13147	12985	0	0	194	0.9876777972160949	031824_Ca Log Corre_Experiment_Plate_6_p.fcs
+032024	0.6	Both	032024_Ca Log Corre_Experiment_Plate_0.6_b.fcs	30000	21380	11674	9844	7182	198	1831	0.8432413911255782	032024_Ca Log Corre_Experiment_Plate_0.6_b.fcs
+032024	0.6	PI	032024_Ca Log Corre_Experiment_Plate_0.6_p.fcs	30000	21297	11665	11269	0	0	428	0.9660522931847407	032024_Ca Log Corre_Experiment_Plate_0.6_p.fcs
+032024	0	Both	032024_Ca Log Corre_Experiment_Plate_0_b.fcs	30000	27979	17010	13327	13056	121	2762	0.7834803057025279	032024_Ca Log Corre_Experiment_Plate_0_b.fcs
+032024	0	PI	032024_Ca Log Corre_Experiment_Plate_0_p.fcs	30000	28191	17362	17176	0	0	201	0.9892869485082364	032024_Ca Log Corre_Experiment_Plate_0_p.fcs
+032024	1000	Both	032024_Ca Log Corre_Experiment_Plate_1000_b.fcs	30000	22439	10942	316	35	10611	10500	0.028879546700785963	032024_Ca Log Corre_Experiment_Plate_1000_b.fcs
+032024	1000	PI	032024_Ca Log Corre_Experiment_Plate_1000_p.fcs	21145	16741	8700	473	0	0	8251	0.05436781609195402	032024_Ca Log Corre_Experiment_Plate_1000_p.fcs
+032024	6	Both	032024_Ca Log Corre_Experiment_Plate_6_b.fcs	30000	22105	11839	8241	8917	217	1035	0.6960891967226962	032024_Ca Log Corre_Experiment_Plate_6_b.fcs
+032024	6	PI	032024_Ca Log Corre_Experiment_Plate_6_p.fcs	30000	22331	12085	11909	0	1	206	0.9854364915184113	032024_Ca Log Corre_Experiment_Plate_6_p.fcs
+032324	0.6	Both	032324_Ca Log Corre_Experiment_Plate_0.6_b.fcs	30000	21105	11680	10564	4212	134	1392	0.9044520547945205	032324_Ca Log Corre_Experiment_Plate_0.6_b.fcs
+032324	0.6	PI	032324_Ca Log Corre_Experiment_Plate_0.6_p.fcs	30000	20104	11202	11098	0	0	146	0.9907159435815033	032324_Ca Log Corre_Experiment_Plate_0.6_p.fcs
+032324	0	Both	032324_Ca Log Corre_Experiment_Plate_0_b.fcs	30000	27843	15736	11273	12840	48	2206	0.7163828164717845	032324_Ca Log Corre_Experiment_Plate_0_b.fcs
+032324	0	PI	032324_Ca Log Corre_Experiment_Plate_0_p.fcs	30000	27066	16191	16128	0	0	122	0.9961089494163424	032324_Ca Log Corre_Experiment_Plate_0_p.fcs
+032324	1000	Both	032324_Ca Log Corre_Experiment_Plate_1000_b.fcs	30000	26165	12668	7	0	12630	12459	5.525734133249131e-4	032324_Ca Log Corre_Experiment_Plate_1000_b.fcs
+032324	1000	PI	032324_Ca Log Corre_Experiment_Plate_1000_p.fcs	28959	25836	12763	52	0	0	12732	0.0040742772075530835	032324_Ca Log Corre_Experiment_Plate_1000_p.fcs
+032324	6	Both	032324_Ca Log Corre_Experiment_Plate_6_b.fcs	30000	23687	12630	9552	8445	483	1230	0.7562945368171021	032324_Ca Log Corre_Experiment_Plate_6_b.fcs
+032324	6	PI	032324_Ca Log Corre_Experiment_Plate_6_p.fcs	30000	22877	12095	11586	0	0	542	0.9579164944191815	032324_Ca Log Corre_Experiment_Plate_6_p.fcs
