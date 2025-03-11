@@ -128,7 +128,7 @@ filtered_outlier <- Subset(dat.f1g[[1]],outlier.gate)
 filtered_singlets <- Subset(filtered_outlier, singlet.gate)
 
 #Convert to dataframe
-df1 <- as.data.frame(exprs(filtered_singlets))
+df1 <- as.data.frame(exprs(filtered_singlets)) %>% mutate(Treatment = "PI", date_info = "031824")
 
 # visualize the gated distribution
 plot_scatter(df1, "FSC.H", "BL1.H", "darkgreen", "FSC.H (Cell Size)", "BL1.H (GFP Intensity)", "FSC.H vs BL1.H")
@@ -139,6 +139,18 @@ plot_scatter(df1, "FSC.H", "BL3.H", "darkred", "FSC.H (Cell Size)", "BL3.H (GFP 
 
 plot_scatter(df1, "SSC.H", "BL3.H", "red2", "SSC.H (Cell Granularity)", "BL3.H (GFP Intensity)", "SSC.H vs BL3.H")
 ```
+create density plot
+```{r}
+ggplot(df1,aes(x = FSC.H)) +
+  geom_density(fill = "darkgreen", alpha = 0.5) +
+  scale_x_continuous(name = "FSC.H x10,000",
+                     breaks = seq(0,1000000, by = 250000), # set custom tick marks
+                     labels = seq(0,100, by = 25)) + # convert original values to a scale of 0 - 100
+  labs(y = "Treatment_031824_0.6_PI") +
+  theme_minimal()
+
+```
+
 
 visualize the difference between _b and _p, what is there difference?
 ```{r}
@@ -146,6 +158,108 @@ test_data <- dat.f1g[[2]]
 df_test <- as.data.frame(exprs(test_data))
 
 
+
+```
+
+
+pull together density plot
+```{r}
+# Create a GatingSet from the flowSet
+gs <- GatingSet(dat.f1g)
+
+# Define the outlier gate (FSC.H and SSC.H gating)
+outlier.gate <- rectangleGate(filterId = "-outlier", "FSC.H" = c(1.2e5, 1e6), "SSC.H" = c(1e2, 1e6))
+
+# Apply outlier gate to the GatingSet
+gs_pop_add(gs, outlier.gate, parent = "root")
+recompute(gs)
+
+# Define the singlet gate (FSC.H and FSC.W gating)
+polygon <- matrix(c(1e5, 1e5, 1e6, 1e6, 
+                    60, 105, 135, 60), ncol = 2)
+colnames(polygon) <- c("FSC.H", "FSC.W")
+singlet.gate <- polygonGate(filterId = "singlet", boundaries = polygon)
+
+# Apply singlet gate to the GatingSet
+gs_pop_add(gs, singlet.gate, parent = "-outlier", name = "singlet")
+recompute(gs)
+
+# Function to extract metadata from sample name
+extract_metadata <- function(filename) {
+  date <- substr(filename, 1, 6)  # Extract first 6 characters as date
+  treatment_code <- str_sub(filename, -5, -5)  # Extract the character before ".fcs"
+  # Extract the H2O2 concentration (number before 'b' or 'p' and '.fcs')
+  h2o2_match <- str_extract(filename, "(\\d*\\.?\\d+)(?=_b\\.fcs|_p\\.fcs)") 
+  
+  # Map treatment codes to labels
+  treatment <- ifelse(treatment_code == "b", "Both",
+                      ifelse(treatment_code == "p", "PI", "Unknown"))
+  
+  return(data.frame(Date = date, Treatment = treatment, H2O2_conc = as.numeric(h2o2_match)))
+}
+
+
+# Extract gated data for all samples
+gated_data_list <- list()
+
+for (i in seq_along(dat.f1g)) {
+  sample_name <- sampleNames(dat.f1g)[i]  # Get filename
+  metadata <- extract_metadata(sample_name)  # Extract metadata (date, treatment, H2O2)
+
+  # Subset data using the gates
+  filtered_outlier <- Subset(dat.f1g[[i]], outlier.gate)
+  filtered_singlets <- Subset(filtered_outlier, singlet.gate)
+
+  # Convert to dataframe and add metadata
+  df <- as.data.frame(exprs(filtered_singlets)) %>%
+    mutate(Treatment = metadata$Treatment, 
+           Date = metadata$Date, 
+           H2O2_conc = metadata$H2O2_conc)
+
+  gated_data_list[[sample_name]] <- df  # Store in list
+}
+
+# Combine all gated data into a single dataframe
+gated_data <- bind_rows(gated_data_list, .id = "Sample")
+
+# Print first few rows of the final dataframe
+head(gated_data)
+
+```
+
+
+
+
+```{r}
+library(ggplot2)
+library(ggridges)
+library(dplyr)
+
+# Scale FSC.H values to match x-axis in the example (FSC.H / 10,000)
+gated_data <- gated_data %>%
+  mutate(
+    FSC.H_scaled = FSC.H / 10000,
+    H2O2_conc = as.numeric(as.character(H2O2_conc))  # Ensure numeric
+  )
+
+# Create the density plot
+#plot<- 
+ggplot(gated_data, aes(x = FSC.H_scaled, y = factor(H2O2_conc), fill = ..density..)) +
+  geom_density_ridges(scale = 2, alpha = 0.8, color = "black", fill = "green4") +
+  facet_grid(rows = vars(Date), cols = vars(Treatment), scales = "free_y", space = "free_y") +
+  scale_x_continuous(limits = c(0, 100), breaks = seq(25, 100, by = 25)) +
+  theme_minimal() +
+  labs(x = "FSC.H x 10,000", y = "Treatment") +
+  theme(
+    strip.text = element_text(size = 14, face = "bold"),
+    axis.text.y = element_text(size = 12, face = "bold", color = "black"),
+    axis.text.x = element_text(size = 12, face = "bold", color = "black"),
+    panel.grid.major = element_line(color = "gray"),
+    panel.grid.minor = element_blank()
+  )
+
+#save
+#ggsave("output/Ca_PIvsPI_FGL.png", plot = plot, width = 10, height = 8, dpi = 300)
 
 ```
 
