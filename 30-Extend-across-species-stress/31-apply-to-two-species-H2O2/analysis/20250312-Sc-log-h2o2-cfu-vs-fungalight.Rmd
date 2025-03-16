@@ -219,16 +219,16 @@ It's recommended by many journals to show an example of the gating strategy. Thi
 
 ```{r}
 scPars <- ggcyto_par_set(limits = list(x = c(0,10^5.5), y = c(0,10^5)))
-# sample #6 is 100 mM treated, PI stained cell
-p.exp_PI <- ggcyto(gs[[26]], aes(x = BL1.H, y = BL3.H), subset = "singlet") + 
+# sample #10 is 6 mM treated, PI stained cell
+p.exp_PI <- ggcyto(gs[[10]], aes(x = BL1.H, y = BL3.H), subset = "singlet") + 
   geom_hex(bins = 64) + 
   geom_gate(live.gate, colour = "gray20") + 
   labs(title = NULL, x = NULL, y = NULL) +
   facet_wrap(~Dye) +
   p.axis + scPars
 
-# sample #5 is 100 mM treated, both SYTO9+PI stained cell
-p.exp_FGL <- ggcyto(gs[[25]], aes(x = BL1.H, y = BL3.H), subset = "singlet") + 
+# sample #9 is 6 mM treated, both SYTO9+PI stained cell
+p.exp_FGL <- ggcyto(gs[[9]], aes(x = BL1.H, y = BL3.H), subset = "singlet") + 
   geom_hex(bins = 64) + 
   geom_gate(live.gate, colour = "gray20") + 
   geom_gate(inter.gate, colour = "steelblue3") + 
@@ -246,8 +246,8 @@ p.exp <- plot_grid(
           axis.text.y = element_blank(),), 
   ncol = 2, rel_widths = c(1.15, 1)
 )
-#ggsave("../output/20250307-gating-strategy-example.png", p.exp,
-#       height = 2.2, width = 3.4)
+ggsave("../output/20250315-Sc-gating-strategy-example.png", p.exp,
+       height = 2.2, width = 3.4)
 ```
 
 ## Explore cell size difference in hydrogen peroxide treated cells
@@ -328,31 +328,21 @@ print(final %>% select(-sample))
 
 # Compare with CFU
 ## Read CFU data 
-These are averaged CFU provided by Hanxi. The raw counts data will be provided by her separately.
+These are averaged CFU provided by Hanxi. Here are the raw cfu data
 ```{r}
-cfu <- read_tsv("../input/20240225-0323-h2o2-Sc-Ca-CFU-raw.tsv") %>% 
-  mutate(Method = "CFU", .after = Treatment) %>% 
-  mutate(Treatment = fct_recode(Treatment, `0` = "mock")) %>%
-  rename(p_live = CFU)
-```
-
-Here are the raw cfu data
-```{r}
-cfu_raw <- read_tsv("../input/20240214-0405-h2o2-Cg-CFU-raw.tsv",
+cfu_raw <- read_tsv("../input/20240225-0323-h2o2-Sc-Ca-CFU-raw.tsv",
                     col_types = "cccccciiii", comment = "#")
 cfu_calc <- cfu_raw %>% 
-  select(Date, Treatment = H2O2_mM, Group, Dilution, Raw_count = Total) %>% 
-  mutate(Date = ymd(Date),
+  select(Date, Species, Treatment = H2O2_mM, Group, Dilution, Raw_count = Total) %>% 
+  mutate(Date = ymd(Date) |> format("%m%d%y"),
          Treatment = fct_inseq(Treatment),
          CFU = Dilution * Raw_count) %>% 
   # group by Date to calculate the ratio of MO to MM
   group_by(Date) %>% 
-  mutate(p_live = CFU / CFU[Group == "MM"]) %>% 
-  # we only need the log dilution series
-  dplyr::filter(Date < ymd("20240301"))
+  mutate(p_live = CFU / CFU[Group == "MM"])
 
 # export the data for paper
-write_tsv(cfu_calc, file = "../output/20250226-log-h2o2-cfu-estimate.tsv")
+write_tsv(cfu_calc, file = "../output/20250315-Sc-Ca-h2o2-cfu-estimate.tsv")
 ```
 ## Calculate survival from PI alone or FungaLight
 
@@ -373,7 +363,7 @@ dye_based <- gated_freq %>%
   relocate(p_live, .after = total_event_count)
 
 # export the data for paper
-write_tsv(dye_based, file = "../output/20250226-log-h2o2-fgl-estimate.tsv")
+write_tsv(dye_based, file = "../output/20250314-Sc-h2o2-fgl-estimate.tsv")
 ```
 ```
 PI <- final %>% 
@@ -397,7 +387,10 @@ all <- bind_rows(
 
 Combine the dye based results with cfu
 ```{r}
-cfu_dye <- bind_rows(cfu,
+cfu_dye <- bind_rows(
+  cfu_calc |> dplyr::filter(Species == "Sc") |>
+    mutate(Method = "CFU") |> 
+    select(Date, Treatment, Method, p_live),
   select(dye_based, Date, Treatment, Method = Dye, starts_with("p"))) %>% 
   mutate(
     Method = factor(Method, levels = c("CFU", "PI", "Both"),
@@ -409,7 +402,7 @@ cfu_dye <- bind_rows(cfu,
 ## Plotting the results
 Compare the three methods
 ```{r}
-h2o2.levels <- c("0" = "0", "10" = "10", "100" = "100", "1000" = "1K")
+#h2o2.levels <- c("0" = "0", "10" = "10", "100" = "100", "1000" = "1K")
 p <- cfu_dye %>% 
   dplyr::filter(Treatment != "5C") %>% 
   ggplot(aes(x = Treatment, y = p_live, group = Method)) +
@@ -419,7 +412,7 @@ p <- cfu_dye %>%
   scale_shape_manual(values = 4:6, guide = "none") +
   scale_y_continuous(labels = scales::percent, 
                      limits = c(NA, 1.1), breaks = seq(0,1,0.5)) +
-  scale_x_discrete(labels = h2o2.levels) +
+  scale_x_discrete() +
   #coord_flip() + 
   labs(x = bquote(H[2]*O[2]~(mM)), y = "% Live") +
   facet_wrap(~Method, nrow = 1) +
@@ -430,39 +423,14 @@ p <- cfu_dye %>%
         axis.title = element_text(size = rel(0.9)),
         panel.spacing = unit(1, "lines"))
 p
-ggsave("../output/20250116-perc-live-compare-three-methods.png",
+ggsave("../output/20250315-Sc-perc-live-compare-three-methods.png",
        width = 4, height = 2.5)
 ```
 
 Check the percent of events in the "Intermediate" gate.
 
-> 100 mM H2O2 treated sample show a significant increase in the Intermediate gate events.
+> 6 mM H2O2 treated sample show a significant increase in the Intermediate gate events.
 
-```{r}
-p.dye <- dye_based %>% 
-  dplyr::filter(Treatment != "5C", Dye == "Both") %>% 
-  ggplot(aes(x = Treatment, y = p_live)) +
-  geom_bar(stat = "summary", fun = "mean", fill = "gray70", width = 0.8) +
-  geom_point(aes(shape = as.character(Date)), 
-             position = position_jitter(0.1),
-             size = 1.5) + 
-  # overlay the p_intermediate points
-  stat_summary(aes(y = p_intermediate), geom = "point", shape = 19, size = 3,
-               fun = "mean", color = "steelblue3") +
-  stat_summary(aes(y = p_intermediate, group = NA), geom = "line",
-               fun = "mean", color = "steelblue") +
-  geom_point(aes(y = p_intermediate, shape = as.character(Date)),
-             position = position_jitter(0.1),
-             color = "steelblue", size = 1.5, stroke = 1.2) + 
-  scale_shape_manual(values = 4:6, guide = "none") +
-  scale_y_continuous(labels = scales::percent, breaks = seq(0,1,0.25)) +
-  labs(title = "CFU", x = bquote(H[2]*O[2]~(mM)), y = "% Live") +
-  theme(strip.text = element_text(size = rel(1.2), face = 2),
-        strip.background = element_blank(),
-        plot.title = element_text(hjust = 0.5))
-
-p.dye
-```
 
 ```{r}
 p.dye <- ungroup(dye_based) %>% 
@@ -472,7 +440,7 @@ p.dye <- ungroup(dye_based) %>%
                names_to = "par", values_to = "perc") %>% 
   mutate(par = factor(par, levels = c("p_live", "p_intermediate"),
                       labels = c("% live", "% intermediate"))) %>% 
-  ggplot(aes(x = Treatment, y = perc, group = par)) +
+  ggplot(aes(x = fct_inseq(Treatment), y = perc, group = par)) +
   geom_bar(aes(fill = par), position = position_dodge(.9),
     stat = "summary", fun = "mean", width = 0.8) +
   geom_point(aes(shape = as.character(Date), color = par), 
@@ -500,7 +468,7 @@ We use ANOVA and posthoc test to test for significant differences between the co
 #lm <- aov(p_live ~ Treatment, data = tmp)
 #TukeyHSD(lm)
 
-cfu_dye %>% 
+cfu_dye %>% ungroup() %>% 
   dplyr::filter(Treatment != "5C") %>% 
   mutate(Treatment = fct_inseq(Treatment)) %>% 
   select(Treatment, Method, p_live) %>% 
@@ -508,7 +476,7 @@ cfu_dye %>%
   mutate(
     fit = map(data, \(df) aov(p_live ~ Treatment, data = df)),
     posthoc = map(fit, TukeyHSD),
-    tidied = map(posthoc, tidy)
+    tidied = map(posthoc, broom::tidy)
   ) %>% 
   unnest(tidied) %>% 
   select(Method, contrast, diff = estimate, lwr = conf.low, upr = conf.high,
