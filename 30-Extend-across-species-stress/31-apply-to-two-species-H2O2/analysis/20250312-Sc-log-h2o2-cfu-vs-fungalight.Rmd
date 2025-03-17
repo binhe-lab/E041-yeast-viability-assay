@@ -159,8 +159,8 @@ p.axis <- list(
 for(date in c("022524", "022624", "022824")){
   p <- ggcyto(gs[pData(gs)$Date == date], aes(x = BL1.H, y = BL3.H), subset = "singlet") + 
     geom_hex(bins = 128) + 
-    geom_gate(live.gate) + 
-    geom_stats(location = "gate", adjust = c(0.03, 2), digits = 1, ) + 
+    geom_gate(live.gate.sc) + 
+    geom_stats(location = "gate", adjust = c(0.02, 2), digits = 1, ) + 
     labs(title = paste0("Date: ", date)) +
     facet_grid(Dye ~ factor(Treatment, levels = treatment.levels)) +# scPars +
     p.axis
@@ -171,22 +171,11 @@ for(date in c("022524", "022624", "022824")){
 Add this gate to the gatingSet
 
 ```{r}
-gs_pop_add(gs, live.gate, parent = "singlet", name = "live")
+gs_pop_add(gs, live.gate.sc, parent = "singlet", name = "live")
 recompute(gs)
 ```
 ## Gate for the intermediate population with high SYTO9
 This is the intermediate population with high Red and Green. We hypothesize that they represent oxidatively damaged cells with partially compromised plasma membranes, resulting in more SYTO9 accumulation but not a significant increase in PI.
-
-> <span style="color:red">Important: I changed the bottom boundary from 10^2.2 to 10^2.3, and the left boundary from 10^3 to 2*10^3</span>
-
-> **Main takeaway**
->
-> 1. Different from the %live gate, the intermediate population is most obvious in the 
-> 100 mM treated sample, and absent in both the 10 mM and 1M treated ones. This suggests
-> that this population could be useful for distinguishing stress levels below the lethal concentration
-> but above the tolerance levels of the species - in this case, < 1M and > 10 mM.
->
-> 2. The mock treated sample showed an intermediate population. Was unexpected.
 
 ```{r}
 #polygon <- matrix(c(10^5, 1*10^3, 10^5,
@@ -200,7 +189,7 @@ for(date in c("022524", "022624", "022824")){
   p <- ggcyto(gs[pData(gs)$Date == date], aes(x = BL1.H, y = BL3.H),
               subset = "singlet") + 
     geom_hex(bins = 128) + 
-    geom_gate(inter.gate) + 
+    geom_gate(inter.gate.sc) + 
     geom_stats(location = "data",  adjust = c(0.05, 5), digits = 3) + 
     labs(title = paste0("Date: ", date)) +
     facet_grid(Dye ~ factor(Treatment, levels = treatment.levels)) + scPars + 
@@ -210,44 +199,29 @@ for(date in c("022524", "022624", "022824")){
 ```
 
 ```{r}
-gs_pop_add(gs, inter.gate, parent = "singlet", name = "intermediate")
+gs_pop_add(gs, inter.gate.sc, parent = "singlet", name = "intermediate")
 recompute(gs)
 ```
 
-## Example plot of the gating strategy
-It's recommended by many journals to show an example of the gating strategy. This is especially important and useful in this case. We will separately illustrate the gating for the PI-alone and FungaLight
+## Representative FGL staining pattern
+We have demonstrated our general gating strategy in Figure 4. Here, the goal is to show an example of the FGL staining pattern applied to other species. For _C. albicans_ in particular, there are some notable differences that required us to adjust the gate boundaries. We will skip PI alone staining for brevity and only show one replicate.
 
 ```{r}
 scPars <- ggcyto_par_set(limits = list(x = c(0,10^5.5), y = c(0,10^5)))
-# sample #10 is 6 mM treated, PI stained cell
-p.exp_PI <- ggcyto(gs[[10]], aes(x = BL1.H, y = BL3.H), subset = "singlet") + 
-  geom_hex(bins = 64) + 
-  geom_gate(live.gate, colour = "gray20") + 
-  labs(title = NULL, x = NULL, y = NULL) +
-  facet_wrap(~Dye) +
-  p.axis + scPars
+p <- ggcyto(gs[with(pData(gs), 
+                    Date == "022824" & Dye == "Both" & Treatment != "5C")], 
+            aes(x = BL1.H, y = BL3.H), subset = "singlet") + 
+  geom_hex(bins = 128) + 
+  geom_gate(live.gate.sc, colour = "gray20") + 
+  geom_gate(inter.gate.sc, colour = "steelblue3") + 
+  #geom_stats(location = "gate", adjust = c(0.02, 2), digits = 1, fill = NA) + 
+  facet_grid(. ~ factor(Treatment, levels = treatment.levels)) + scPars +
+  p.axis +
+  theme(plot.title = element_blank(), axis.title = element_blank())
+p
 
-# sample #9 is 6 mM treated, both SYTO9+PI stained cell
-p.exp_FGL <- ggcyto(gs[[9]], aes(x = BL1.H, y = BL3.H), subset = "singlet") + 
-  geom_hex(bins = 64) + 
-  geom_gate(live.gate, colour = "gray20") + 
-  geom_gate(inter.gate, colour = "steelblue3") + 
-  labs(title = NULL, x = NULL, y = NULL) +
-  facet_wrap(~Dye, labeller = labeller(Dye = c("Both" = "FungaLight"))) +
-  p.axis + scPars
-
-plot_grid(as.ggplot(p.exp_PI), as.ggplot(p.exp_FGL))
-
-p.exp <- plot_grid(
-  as.ggplot(p.exp_PI) + 
-    theme(strip.text = element_text(size = rel(0.9), face = 1)), 
-  as.ggplot(p.exp_FGL) +
-    theme(strip.text = element_text(size = rel(0.9), face = 1),
-          axis.text.y = element_blank(),), 
-  ncol = 2, rel_widths = c(1.15, 1)
-)
-ggsave("../output/20250315-Sc-gating-strategy-example.png", p.exp,
-       height = 2.2, width = 3.4)
+ggsave("../output/20250316-Sc-FGL-representative-plot.png", 
+       height = 2, width = 5)
 ```
 
 ## Explore cell size difference in hydrogen peroxide treated cells
@@ -344,6 +318,7 @@ cfu_calc <- cfu_raw %>%
 # export the data for paper
 write_tsv(cfu_calc, file = "../output/20250315-Sc-Ca-h2o2-cfu-estimate.tsv")
 ```
+
 ## Calculate survival from PI alone or FungaLight
 
 For both PI alone and FungaLight, we will calculate the percent live events. For FungaLight specifically, we will also record the percent intermediate events and will investigate its utility

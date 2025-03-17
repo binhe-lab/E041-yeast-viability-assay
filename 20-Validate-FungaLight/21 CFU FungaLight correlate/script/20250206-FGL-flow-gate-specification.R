@@ -27,5 +27,39 @@ polygon <- matrix(c(10^3, 10^5.5, 10^5.5,   # BL1.H, green
 colnames(polygon) <- c("BL1.H", "BL3.H")
 inter.gate <- polygonGate(filterId = "inter", .gate = polygon)
 
+# -----------------------------
+# S. cerevisiae specific gates
+# -----------------------------
+# live cell gate
+polygon <- matrix(c(0, 10^4, 10^4, 0, # BL1.H, green
+                    10^2.3, 10^2.3, 0, 0),# BL3.H, red
+                  ncol = 2)
+colnames(polygon) <- c("BL1.H", "BL3.H")
+live.gate.sc <- polygonGate(filterId = "live", .gate = polygon)
+
+# intermediate gate
+polygon <- matrix(c(10^3, 10^5.5, 10^5.5,   # BL1.H, green
+                    10^2.3, 10^2.3, 10^4.5),# BL3.H, red
+                  ncol = 2)
+colnames(polygon) <- c("BL1.H", "BL3.H")
+inter.gate.sc <- polygonGate(filterId = "inter", .gate = polygon)
+
+# ---------------------------
+# C. albicans specific gates
+# ---------------------------
+# live cell gate
+polygon <- matrix(c(0, 10^4.2, 10^4.2, 0, # BL1.H, green
+                    10^2.7, 10^2.7, 0, 0),# BL3.H, red
+                  ncol = 2)
+colnames(polygon) <- c("BL1.H", "BL3.H")
+live.gate.ca <- polygonGate(filterId = "live", .gate = polygon)
+
+# intermediate gate
+polygon <- matrix(c(10^3, 10^5.5, 10^5.5,   # BL1.H, green
+                    10^2.7, 10^2.7, 10^4.5),# BL3.H, red
+                  ncol = 2)
+colnames(polygon) <- c("BL1.H", "BL3.H")
+inter.gate.ca <- polygonGate(filterId = "inter", .gate = polygon)
+
 # clean up
 rm(polygon)
