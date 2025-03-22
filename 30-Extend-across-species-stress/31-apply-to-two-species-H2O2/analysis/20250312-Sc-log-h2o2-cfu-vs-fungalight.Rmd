@@ -207,7 +207,10 @@ recompute(gs)
 We have demonstrated our general gating strategy in Figure 4. Here, the goal is to show an example of the FGL staining pattern applied to other species. For _C. albicans_ in particular, there are some notable differences that required us to adjust the gate boundaries. We will skip PI alone staining for brevity and only show one replicate.
 
 ```{r}
-scPars <- ggcyto_par_set(limits = list(x = c(0,10^5.5), y = c(0,10^5)))
+scPars <- ggcyto_par_set(limits = list(x = c(0,10^5), y = c(0,10^4.2)))
+treatment_labels <- c(
+  "0" = "0 mM", "0.6" = "0.6 mM", "6" = "6 mM", "1000" = "1M"
+)
 p <- ggcyto(gs[with(pData(gs), 
                     Date == "022824" & Dye == "Both" & Treatment != "5C")], 
             aes(x = BL1.H, y = BL3.H), subset = "singlet") + 
@@ -215,13 +218,15 @@ p <- ggcyto(gs[with(pData(gs),
   geom_gate(live.gate.sc, colour = "gray20") + 
   geom_gate(inter.gate.sc, colour = "steelblue3") + 
   #geom_stats(location = "gate", adjust = c(0.02, 2), digits = 1, fill = NA) + 
-  facet_grid(. ~ factor(Treatment, levels = treatment.levels)) + scPars +
-  p.axis +
-  theme(plot.title = element_blank(), axis.title = element_blank())
+  facet_grid(. ~ factor(Treatment, levels = names(treatment_labels), 
+                        labels = treatment_labels)) + 
+  scPars + p.axis +
+  theme(plot.title = element_blank(), axis.title = element_blank(),
+        strip.text = element_text(size = rel(0.8), face = 2))
 p
 
 ggsave("../output/20250316-Sc-FGL-representative-plot.png", 
-       height = 2, width = 5)
+       height = 2, width = 5.5)
 ```
 
 ## Explore cell size difference in hydrogen peroxide treated cells
@@ -340,6 +345,7 @@ dye_based <- gated_freq %>%
 # export the data for paper
 write_tsv(dye_based, file = "../output/20250314-Sc-h2o2-fgl-estimate.tsv")
 ```
+
 ```
 PI <- final %>% 
   dplyr::filter(Dye == "PI") %>% 
@@ -375,6 +381,103 @@ cfu_dye <- bind_rows(
 ```
 
 ## Plotting the results
+CFU survival
+```{r}
+p.cfu <- cfu_calc %>% 
+  dplyr::filter(Species == "Sc") %>%
+  ggplot(aes(x = Treatment, y = p_live)) +
+  geom_bar(stat = "summary", fun = "mean", fill = "gray70", width = 0.8) +
+  geom_point(aes(shape = as.character(Date)), 
+             position = position_jitter(0.1),
+             size = 1.5) + 
+  scale_shape_manual(values = 4:6, guide = "none") +
+  scale_y_continuous(labels = scales::percent, 
+                     limits = c(NA, 1.05), breaks = seq(0,1,0.5)) +
+  labs(title = "CFU", x = bquote(H[2]*O[2]~(mM)), y = "% Live") +
+  theme(strip.text = element_text(size = rel(1.2), face = 2),
+        strip.background = element_blank(),
+        plot.title = element_text(hjust = 0.5))
+
+p.cfu
+```
+
+FungaLight results
+```{r}
+p.dye <- dye_based %>% 
+  dplyr::filter(Treatment != "5C", Dye == "Both") %>%
+  ggplot(aes(x = fct_inseq(Treatment), y = p_live)) +
+  geom_bar(stat = "summary", fun = "mean", fill = "gray70", width = 0.8) +
+  geom_point(aes(shape = as.character(Date)), 
+             position = position_jitter(0.1),
+             size = 1.5) + 
+  # overlay the p_intermediate points
+  stat_summary(aes(y = p_intermediate), geom = "point", shape = 95,
+            fun = "mean", size = 5, color = "steelblue3") +
+  stat_summary(aes(y = p_intermediate, group = NA), geom = "line",
+            fun = "mean", color = "steelblue") +
+  geom_point(aes(y = p_intermediate, shape = as.character(Date)),
+             position = position_jitter(0.1),
+             color = "steelblue", size = 1.5, stroke = 1.5) + 
+  scale_shape_manual(values = 4:6, guide = "none") +
+  scale_y_continuous(labels = scales::percent, 
+                     limits = c(NA, 1.05), breaks = seq(0,1,0.5)) +
+  labs(title = "FungaLight", x = bquote(H[2]*O[2]~(mM)), y = "% Live") +
+  theme(strip.text = element_text(size = rel(1.2), face = 2),
+        strip.background = element_blank(),
+        plot.title = element_text(hjust = 0.5))
+
+p.dye
+```
+
+Alternative bar plots
+```{r}
+p.dye.side_by_side <- dye_based %>% 
+  dplyr::filter(Treatment != "5C", Dye == "Both") %>%
+  select(Date, Treatment, p_live, p_intermediate) %>% 
+  pivot_longer(cols = c(p_live, p_intermediate), 
+               names_to = "par", values_to = "perc") %>% 
+  mutate(par = factor(par, levels = c("p_live", "p_intermediate"),
+                      labels = c("% live", "% intermediate"))) %>% 
+  ggplot(aes(x = fct_inseq(Treatment), y = perc, group = par)) +
+  geom_bar(aes(fill = par), position = position_dodge(0.9),
+           stat = "summary", fun = "mean", width = 0.8) +
+  geom_point(aes(shape = as.character(Date), color = par), 
+             position = position_jitterdodge(jitter.width = 0.1,
+                                             dodge.width = 0.9),
+             size = 1.2) + 
+  scale_fill_manual(NULL, values = c("gray70", "lightblue2")) +
+  scale_color_manual(NULL, values = c("black", "steelblue")) +
+  scale_shape_manual(values = 4:6, guide = "none") +
+  scale_y_continuous(labels = scales::percent, 
+                     limits = c(NA, 1.05), breaks = seq(0,1,0.5)) +
+  labs(title = "FungaLight", x = bquote(H[2]*O[2]~(mM)), y = NULL) +
+  theme(strip.text = element_text(size = rel(1.2), face = 2),
+        strip.background = element_blank(),
+        plot.title = element_text(hjust = 0.5),
+        legend.position = "inside",
+        legend.position.inside = c(0.8, 0.9))
+
+p.dye.side_by_side
+```
+
+Assemble the plot
+```{r}
+plot_grid(
+  p.cfu + labs(x = NULL, y = NULL) +
+    theme(title = element_text(size = rel(0.7)),
+          axis.text = element_text(size = rel(0.7)),
+          axis.text.x = element_blank()),
+  p.dye.side_by_side + labs(x = NULL, y = NULL) +
+    theme(#axis.text.y = element_blank(),
+          title = element_text(size = rel(0.7)),
+          axis.text = element_text(size = rel(0.7)),
+          legend.position = "none"),
+  nrow = 2, rel_heights = c(1, 1.2)
+)
+ggsave("../output/20250321-Sc-log-h2o2-CFU-FGL-compare.png",
+       width = 4, height = 4)
+```
+
 Compare the three methods
 ```{r}
 #h2o2.levels <- c("0" = "0", "10" = "10", "100" = "100", "1000" = "1K")
@@ -402,41 +505,25 @@ ggsave("../output/20250315-Sc-perc-live-compare-three-methods.png",
        width = 4, height = 2.5)
 ```
 
-Check the percent of events in the "Intermediate" gate.
-
-> 6 mM H2O2 treated sample show a significant increase in the Intermediate gate events.
-
-
-```{r}
-p.dye <- ungroup(dye_based) %>% 
-  dplyr::filter(Treatment != "5C", Dye == "Both") %>% 
-  select(Date, Treatment, p_live, p_intermediate) %>% 
-  pivot_longer(cols = c(p_live, p_intermediate), 
-               names_to = "par", values_to = "perc") %>% 
-  mutate(par = factor(par, levels = c("p_live", "p_intermediate"),
-                      labels = c("% live", "% intermediate"))) %>% 
-  ggplot(aes(x = fct_inseq(Treatment), y = perc, group = par)) +
-  geom_bar(aes(fill = par), position = position_dodge(.9),
-    stat = "summary", fun = "mean", width = 0.8) +
-  geom_point(aes(shape = as.character(Date), color = par), 
-             position = position_jitterdodge(jitter.width = 0.1,
-                                             dodge.width = 0.9),
-             size = 1.5, stroke = 1.2) + 
-  scale_fill_manual(NULL, values = c("gray70", "lightblue3")) +
-  scale_color_manual(NULL, values = c("black", "steelblue")) +
-  scale_shape_manual(values = 4:6, guide = "none") +
-  scale_y_continuous(labels = scales::percent, breaks = seq(0,1,0.25)) +
-  labs(title = "CFU", x = bquote(H[2]*O[2]~(mM)), y = NULL) +
-  theme(strip.text = element_text(size = rel(1.2), face = 2),
-        strip.background = element_blank(),
-        plot.title = element_text(hjust = 0.5),
-        legend.position = "inside",
-        legend.position.inside = c(0.8, 0.9))
-
-p.dye
-```
 ## Statistical tests
-We use ANOVA and posthoc test to test for significant differences between the conditions
+```{r}
+tmp <- aov(p_live ~ Treatment, data = cfu_calc)
+TukeyHSD(tmp)
+```
+
+For p_live with FungaLight
+```{r}
+tmp <- aov(p_live ~ Treatment, data = dye_based)
+TukeyHSD(tmp)
+```
+
+For p_intermediate with FungaLight
+```{r}
+tmp <- aov(p_intermediate ~ Treatment, data = dye_based)
+TukeyHSD(tmp)
+```
+
+Below we use ANOVA and posthoc test to test for significant differences between the conditions
 ```{r}
 #tmp <- dplyr::filter(cfu_dye, Treatment != "5C", Method == "FungaLight") %>% 
 #  mutate(Treatment = fct_inseq(Treatment))
