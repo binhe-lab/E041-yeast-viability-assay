@@ -464,18 +464,21 @@ Assemble the plot
 ```{r}
 plot_grid(
   p.cfu + labs(x = NULL, y = NULL) +
-    theme(title = element_text(size = rel(0.7)),
+    theme(plot.title = element_text(size = rel(0.7),
+                                    face = 2, margin = margin(b = 2)),
           axis.text = element_text(size = rel(0.7)),
           axis.text.x = element_blank()),
+  NULL,
   p.dye.side_by_side + labs(x = NULL, y = NULL) +
     theme(#axis.text.y = element_blank(),
-          title = element_text(size = rel(0.7)),
+          plot.title = element_text(size = rel(0.7),
+                                    face = 2, margin = margin(b = 1)),
           axis.text = element_text(size = rel(0.7)),
           legend.position = "none"),
-  nrow = 2, rel_heights = c(1, 1.2)
+  nrow = 3, rel_heights = c(1, 0.1, 1.12)
 )
 ggsave("../output/20250321-Sc-log-h2o2-CFU-FGL-compare.png",
-       width = 4, height = 4)
+       width = 2.5, height = 3)
 ```
 
 Compare the three methods
@@ -513,13 +516,17 @@ TukeyHSD(tmp)
 
 For p_live with FungaLight
 ```{r}
-tmp <- aov(p_live ~ Treatment, data = dye_based)
+tmp <- dye_based %>% 
+  dplyr::filter(Treatment != "5C", Dye == "Both") %>%
+  aov(p_live ~ fct_inseq(Treatment), data = .)
 TukeyHSD(tmp)
 ```
 
 For p_intermediate with FungaLight
 ```{r}
-tmp <- aov(p_intermediate ~ Treatment, data = dye_based)
+tmp <- dye_based %>% 
+  dplyr::filter(Treatment != "5C", Dye == "Both") %>%
+  aov(p_intermediate ~ fct_inseq(Treatment), data = .)
 TukeyHSD(tmp)
 ```
 
