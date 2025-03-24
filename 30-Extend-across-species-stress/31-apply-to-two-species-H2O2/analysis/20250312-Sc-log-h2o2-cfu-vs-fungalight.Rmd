@@ -318,10 +318,12 @@ cfu_calc <- cfu_raw %>%
          CFU = Dilution * Raw_count) %>% 
   # group by Date to calculate the ratio of MO to MM
   group_by(Date) %>% 
-  mutate(p_live = CFU / CFU[Group == "MM"])
+  mutate(p_live = CFU / CFU[Group == "MM"]) %>% 
+  # retain only Sc data
+  dplyr::filter(Species == "Sc")
 
 # export the data for paper
-write_tsv(cfu_calc, file = "../output/20250315-Sc-Ca-h2o2-cfu-estimate.tsv")
+# write_tsv(cfu_calc, file = "../output/20250315-Sc-Ca-h2o2-cfu-estimate.tsv")
 ```
 
 ## Calculate survival from PI alone or FungaLight
@@ -369,7 +371,7 @@ all <- bind_rows(
 Combine the dye based results with cfu
 ```{r}
 cfu_dye <- bind_rows(
-  cfu_calc |> dplyr::filter(Species == "Sc") |>
+  cfu_calc |> #dplyr::filter(Species == "Sc") |>
     mutate(Method = "CFU") |> 
     select(Date, Treatment, Method, p_live),
   select(dye_based, Date, Treatment, Method = Dye, starts_with("p"))) %>% 
