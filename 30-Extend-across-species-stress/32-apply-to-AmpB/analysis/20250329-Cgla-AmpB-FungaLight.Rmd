@@ -1,98 +1,149 @@
 ---
-title: "PI vs PI+SYTO9 Log Correlation"
-output: html_document
-date: "2023-12-18"
+title: "Apply FungaLight to AmpB-treated C. glabrata cells"
+author: Hanxi Tang, Bin He
+date: "2025-03-31 (updated `r Sys.time()`)"
+output:
+  html_notebook:
+    toc: true
+    toc_depth: 4
+    code_folding: hide
 ---
 
-# Background
-This is the flow cytometry data for post treatment phase Cg stained with PI+SYTO9, and run through flow cytometry (details in ELN), and plated for CFU. The goal is to establish FungaLight's application after antibiotic stress.
 
 ```{r setup, message=FALSE}
-require(tidyverse)
 require(flowCore)
 require(flowClust)
 require(openCyto)
+require(tidyverse)
 require(ggcyto)
 require(cowplot)
-require(ggrdiges)
+#require(ggrdiges)
 ```
 
-# Import data
+```{r}
+old <- theme_set(theme_minimal(base_size = 14) + panel_border(color = "gray20"))
+```
+
+# Goal
+The goal is to test FungaLight's applicability to antifungal-treated _C. glabrata_ cells.
+
+# Data
+This is the flow cytometry data for post  stained with PI+SYTO9, and run through flow cytometry (details in ELN), and plated for CFU. 
+
+## Import data
 > FCS files are stored in RDSS/user/flow cytometry, FCS is read and write into an input tsv table. The tsv file is avaliable from the Input folder.
 
 ```{r}
 # use relative path to make it easier for collaboration
-data.path = "/space/htang5/Documents/20240325-29"
-dat.f1g <- read.flowSet(path = data.path, transformation = FALSE,  # the original values are already linearized. 
-                   emptyValue = FALSE,  alter.names = TRUE,   # change parameter names to R format
-                   column.pattern = ".H|FSC|SSC") # only load the height variables for the fluorescent parameters
+data.path = "../input/20240325-29-Cgla-AmpB/"
+
+dat0 <- read.flowSet(path = data.path, pattern = "*.fcs",
+                     # the original values are already linearized. 
+                     transformation = FALSE,  
+                     # change parameter names to R format
+                     emptyValue = FALSE,  alter.names = TRUE,
+                     # only load the height variables for the fluorescent parameters
+                     column.pattern = ".H|FSC|SSC")
 ```
 
 Simplify the sample names
 
 ```{r}
-require(PTXQC)
-oriNames <- sampleNames(dat.f1g)
+#require(PTXQC)
+oriNames <- sampleNames(dat0)
 tmp <- str_split(oriNames, pattern = "[ _]+", simplify = TRUE)[,c(1, 6)]
 colnames(tmp) <- c("Date", "Treatment") 
 sample <- data.frame(tmp) %>% 
-  mutate(
-    Treatment = factor(
-      gsub("\\.fcs", "", Treatment),
-      levels = c("0", "0.02", "0.04", "0.06", "0.08", "0.1", "1")))
+  mutate(Treatment = 
+           fct_inseq(gsub("\\.fcs", "", Treatment))
+  )
 rownames(sample) <- oriNames
-pData(dat.f1g) <- sample
-print(pData(dat.f1g))
-write_tsv(pData(dat.f1g), file = "/space/htang5/Documents/FUN1_data_analysis/biol-4386-course-project-htang5/Methods Paper Writing/03-FungaLight-Application/Input/20240403-Cg-AmpB-Correlation-raw-data-ht.tsv")
+dat = dat0 # make a copy
+pData(dat) <- sample
+write_tsv(pData(dat), file = "../input/20240325-Cg-AmpB-FGL-sample.tsv")
 ```
 
+# Gatting strategies {.tabset}
+## Load all gates from specification file
+```{r}
+source("../../../00-Shared/01-script/20250206-FGL-flow-gate-specification-Cg.R")
 ```
 
-
-# Gatting for Singlets
+## Gatting for Singlets
 >The following gaphing steps are used to gate singlets by FSC and SSC values. Only singlets are included in analysis.
 
 >Gate for outlier
 
 ```{r}
-```{r}
-outlier.gate <- rectangleGate(filterId = "-outlier", "FSC.H" = c(1.2e5, 1e6), "SSC.H" = c(1e2, 1e6))
-ggcyto(dat.f1g [1], aes(x = FSC.H, y = SSC.H), subset = "root") +
+ggcyto(dat[1], aes(x = FSC.H, y = SSC.H), subset = "root") +
   geom_hex(bins = 64) + geom_gate(outlier.gate) + facet_wrap(~name, ncol = 2) + ggcyto_par_set(limits = "instrument")
 ```
-```
-
 
 Add gate to GS
 ```{r}
-```{r}
-gs <- GatingSet(dat.f1g) # create a GatingSet
+gs <- GatingSet(dat) # create a GatingSet
+# rename the samples
+sampleNames(gs) <- pData(gs)$name
+# repair the Date column in pData
+pData(gs)$Date = paste0("0", pData(gs)$Date)
+# add the outlier gate
 gs_pop_add(gs, outlier.gate, parent = "root")
 recompute(gs)
 ```
-```
 
+> Gate for singlets
 
->Gate for singlets
-
-```{r}
 ```{r fig.width=4, fig.height=4}
 scPars <- ggcyto_par_set(limits = list(x = c(0,1e6), y = c(30,300)))
-ex <- Subset(dat.f1g[[1]], outlier.gate)
-polygon <- matrix(c(1e5, 1e5, 1e6, 1e6, 
-                    60, 105, 135,60), ncol = 2)
-colnames(polygon) <- c("FSC.H", "FSC.W")
-singlet.gate <- polygonGate(filterId = "singlet", boundaries = polygon)
+ex <- Subset(dat[[1]], outlier.gate)
+#polygon <- matrix(c(1e5, 1e5, 1e6, 1e6, 
+#                    60, 105, 135,60), ncol = 2)
+#colnames(polygon) <- c("FSC.H", "FSC.W")
+#singlet.gate <- polygonGate(filterId = "singlet", .gate = polygon)
 ggcyto(ex, aes(x = FSC.H, y = FSC.W)) + geom_hex(bins = 128) + geom_gate(singlet.gate) + geom_stats() + scPars
 ```
-```
+
 Add this gate to the gatingSet
-```{r}
 ```{r}
 gs_pop_add(gs, singlet.gate, parent = "-outlier", name = "singlet")
 recompute(gs)
 ```
+
+## Gate for live cells
+This is the live population with red fluorescence below 10^2.2
+
+> **Main takeaway**
+>
+> 1. From 10mM to 1M treated samples, %live decreases and the change is much more obvious in the dual stain (PI first or simultaneous) than PI alone
+>
+> 2. The mock treated sample has a visible high red high green (not as high and prominent as the 100 mM treated) than 10 mM treated. It doesn't follow the trend above.
+
+```{r}
+scPars <- ggcyto_par_set(limits = list(x = c(0,10^5.5), y = c(0,10^5.5)))
+#polygon <- matrix(c(0, 5*10^3, 5*10^3, 0, # BL1.H, green
+#                    10^2.2, 10^2.2, 0, 0),# BL3.H, red
+#                  ncol = 2)
+#colnames(polygon) <- c("BL1.H", "BL3.H")
+#live.gate <- polygonGate(filterId = "live", .gate = polygon)
+p.axis <- list(
+  scale_x_logicle(breaks = 10^c(2,3,4,5)),
+  scale_y_logicle(breaks = 10^c(2,3,4,5)),
+  theme(
+    strip.text = element_text(size = rel(1.1), face = 2)
+  )
+)
+for(date in unique(sample$Date)){
+  p <- ggcyto(gs[pData(gs)$Date == date], aes(x = BL1.H, y = BL3.H), subset = "singlet") + 
+    geom_hex(bins = 128) + 
+    geom_gate(live.gate.sc) + 
+    geom_stats(location = "gate", adjust = c(0.02, 2), digits = 1, ) + 
+    labs(title = paste0("Date: ", date)) +
+    facet_wrap(~ Treatment, ncol = 4) +# scPars +
+    p.axis
+  print(p)
+}
 ```
+
 > Gate for Red Negative Population
 This is the live population with red fluorescence below 10^2.2
 
