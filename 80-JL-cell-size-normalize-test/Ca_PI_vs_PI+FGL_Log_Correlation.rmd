@@ -152,7 +152,7 @@ ggplot(df1,aes(x = FSC.H)) +
 ```
 
 
-visualize the difference between _b and _p, what is there difference?
+visualize the difference between _b and _p, what is there difference? b represents both dye, P represents PI only
 ```{r}
 test_data <- dat.f1g[[2]]
 df_test <- as.data.frame(exprs(test_data))
@@ -288,6 +288,99 @@ norm_data <- gated_data %>%
                     nGFP = BL1.H/(FSC.H/median_FSC.H)^(exponent))
 ```
 
+# plot the density plot of BL1.H vs BL3.H and nGFP vs nRFP
+Conclusion: estimated cell normalization on BL1.H and BL3.H channel does not affect dead cell population conclusion, based on gating on red positive (dead; for Both).
+
+I can define a function that specify the channel with or w/o normaliztion, and specify the polygon for gating the cells.
+
+# before normalization
+```{r}
+library(ggplot2)
+library(dplyr)
+library(sp)
+
+# Define polygon with BL1.H and BL3.H
+polygon <- matrix(c(10^3, 10^2.5, 10^3, 10^5,
+                    10^4.5, 10^2.2, 10^2.2, 10^4), 
+                  ncol = 2)  # Default fills column-wise
+colnames(polygon) <- c("BL1.H", "BL3.H")
+
+# Check if each point is inside the polygon
+norm_data <- norm_data %>%
+  mutate(inside_polygon = point.in.polygon(BL1.H, BL3.H, 
+                                           polygon[, 1], polygon[, 2]) > 0)
+
+# Summarize percentage inside
+summary_counts <- norm_data %>%
+  group_by(H2O2_conc, Treatment) %>%
+  summarise(
+    total_points = n(),
+    inside_count = sum(inside_polygon, na.rm = TRUE),
+    percentage_inside = round((inside_count / total_points) * 100, 3),  # Keep naming
+    .groups = "drop"
+  )
+
+ggplot(norm_data, aes(x = BL1.H, y = BL3.H)) +
+  geom_hex(bins = 80, aes(fill = ..count..)) +  # Hex binning
+  geom_polygon(data = as.data.frame(polygon), aes(x = BL1.H, y = BL3.H), 
+               fill = NA, color = "red", size = 1.2) +  # Polygon overlay
+  geom_text(data = summary_counts, 
+            aes(x = 10^3.5, y = 10^4.5,  # Adjusted placement
+                label = paste0(percentage_inside, "%")), 
+            color = "black", size = 6, fontface = "bold") +  # Add percentage text
+  facet_grid(rows = vars(H2O2_conc), cols = vars(Treatment)) +
+  theme_minimal() +
+  labs(x = "BL1.H", y = "BL3.H") +
+  scale_x_logicle() +  
+  scale_y_logicle()
+
+
+
+```
+
+# nGFP vs nRFP
+```{r}
+
+# for nGFP vs nRFP
+# Convert polygon matrix to a data frame
+polygon_df <- as.data.frame(matrix(c(10^3, 10^2.5, 10^3, 10^5,
+                                     10^4.5, 10^2.2, 10^2.2, 10^4), 
+                                   ncol = 2))
+colnames(polygon_df) <- c("nGFP", "nRFP")
+
+# Check if each point is inside the polygon
+norm_data <- norm_data %>%
+  mutate(inside_polygon = point.in.polygon(nGFP, nRFP, 
+                                           polygon_df$nGFP, polygon_df$nRFP) > 0)
+
+# Summarize percentage inside
+summary_counts <- norm_data %>%
+  group_by(H2O2_conc, Treatment) %>%
+  summarise(
+    total_points = n(),
+    inside_count = sum(inside_polygon, na.rm = TRUE),
+    percentage_inside = round((inside_count / total_points) * 100, 3),  # Round for readability
+    .groups = "drop"
+  )
+
+ggplot(norm_data, aes(x = nGFP, y = nRFP)) +
+  geom_hex(bins = 80, aes(fill = ..count..)) +  # Hex binning
+  geom_polygon(data = polygon_df, aes(x = nGFP, y = nRFP), 
+               fill = NA, color = "red", size = 1.2) +  # Overlay polygon
+  geom_text(data = summary_counts, 
+            aes(x = 10^3.5, y = 10^4.5,  # Adjust position for visibility
+                label = paste0(percentage_inside, "%")), 
+            color = "black", size = 6, fontface = "bold") +  # Overlay text
+  facet_grid(rows = vars(H2O2_conc), cols = vars(Treatment)) +
+  theme_minimal() +
+  labs(x = "nGFP", y = "nRFP") +
+  scale_x_logicle() +  
+  scale_y_logicle()
+
+```
+
+
+
 ```{r}
 # plot the contour plot of BL1.H vs BL3.H and nBL1.H vs nBL3.H
 ggplot(norm_data, aes(x = BL1.H, y = BL3.H)) +
@@ -312,6 +405,8 @@ ggplot(norm_data, aes(x = nGFP, y = nRFP)) +
   scale_y_log10(limits = c(10^1, 10^5), 
                 breaks = c(10^1, 10^2, 10^3, 10^4, 10^5))  # Adjusted to avoid 0
 ```
+
+
 ```{r}
 # visual inspection: if the normalization change the conclusion.
 
