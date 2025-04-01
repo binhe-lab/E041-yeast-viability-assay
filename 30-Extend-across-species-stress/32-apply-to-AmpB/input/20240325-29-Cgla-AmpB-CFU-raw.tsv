@@ -1,4 +1,4 @@
-Date	Strain	Species	Genotype	AmpB_ng_mL	Treatment	Dilutions fold	Total	Large	Small
+Date	Strain	Species	Genotype	AmpB_ng_mL	Group	Dilution	Total	Large	Small
 20240325	yH181	Cg	wt	0	MM	1000	100	100	0
 20240325	yH181	Cg	wt	0.02	MO	100	648	648	0
 20240325	yH181	Cg	wt	0.04	MO	100	654	654	0

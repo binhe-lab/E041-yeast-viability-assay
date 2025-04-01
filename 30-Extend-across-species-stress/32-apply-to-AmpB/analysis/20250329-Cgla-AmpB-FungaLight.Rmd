@@ -54,11 +54,12 @@ oriNames <- sampleNames(dat0)
 tmp <- str_split(oriNames, pattern = "[ _]+", simplify = TRUE)[,c(1, 6)]
 colnames(tmp) <- c("Date", "Treatment") 
 sample <- data.frame(tmp) %>% 
-  mutate(Treatment = 
-           fct_inseq(gsub("\\.fcs", "", Treatment))
+  mutate(
+    Treatment = fct_inseq(gsub("\\.fcs", "", Treatment)),
+    name = paste(Date, Treatment, sep = "_")
   )
 rownames(sample) <- oriNames
-dat = dat0 # make a copy
+dat <- dat0 # make a copy
 pData(dat) <- sample
 write_tsv(pData(dat), file = "../input/20240325-Cg-AmpB-FGL-sample.tsv")
 ```
@@ -135,8 +136,8 @@ p.axis <- list(
 for(date in unique(sample$Date)){
   p <- ggcyto(gs[pData(gs)$Date == date], aes(x = BL1.H, y = BL3.H), subset = "singlet") + 
     geom_hex(bins = 128) + 
-    geom_gate(live.gate.sc) + 
-    geom_stats(location = "gate", adjust = c(0.02, 2), digits = 1, ) + 
+    geom_gate(live.gate.AmpB) + 
+    geom_stats(location = "gate", adjust = c(0.05, 2), digits = 1, ) + 
     labs(title = paste0("Date: ", date)) +
     facet_wrap(~ Treatment, ncol = 4) +# scPars +
     p.axis
@@ -144,98 +145,265 @@ for(date in unique(sample$Date)){
 }
 ```
 
-> Gate for Red Negative Population
-This is the live population with red fluorescence below 10^2.2
+Add this gate to the gatingSet
 
-```{r}
-```{r}
-scPars <- ggcyto_par_set(limits = list(x = c(0,1e6), y = c(0,1e6)))
-ex <- Subset(dat.f1g, singlet.gate)
-polygon <- matrix(c(0, 10^3, 10^3, 0,
-                    10^2.2, 10^2.2, 0, 0), ncol = 2)
-colnames(polygon) <- c("BL1.H", "BL3.H")
-live.gate <- polygonGate(filterId = "live", boundaries = polygon)
-ggcyto(ex, aes(x = BL1.H, y = BL3.H)) + geom_hex(bins = 128) + geom_gate(live.gate) + geom_stats() + scPars + scale_x_logicle() + scale_y_logicle() + facet_wrap(Treatment ~ Date, ncol = 7, labeller = labeller(.cols = label_both)) 
-```
+```{r eval=FALSE, include=FALSE}
+gs_pop_add(gs, live.gate.AmpB, parent = "singlet", name = "live")
+recompute(gs)
 ```
 
+## Gate for the intermediate population with high SYTO9
+This is the intermediate population with high Red and Green. We hypothesize that they represent oxidatively damaged cells with partially compromised plasma membranes, resulting in more SYTO9 accumulation but not a significant increase in PI.
+
+```{r}
+for(date in unique(sample$Date)){
+  p <- ggcyto(gs[pData(gs)$Date == date], aes(x = BL1.H, y = BL3.H),
+              subset = "singlet") + 
+    geom_hex(bins = 128) + 
+    geom_gate(inter.gate.AmpB) + 
+    geom_stats(location = "data",  adjust = c(0.05, 5), digits = 3) + 
+    labs(title = paste0("Date: ", date)) +
+    facet_wrap(~ fct_inseq(Treatment), nrow = 2) + 
+    scPars + p.axis
+  print(p)
+}
+```
 
 Add this gate to the gatingSet
 
 ```{r eval=FALSE, include=FALSE}
-gs_pop_add(gs, live.gate, parent = "singlet", name = "live")
+gs_pop_add(gs, inter.gate.AmpB, parent = "singlet", name = "intermediate")
 recompute(gs)
 ```
 
-> Gate for Red Positive Intermediates
-This is the intermediate population on the right side
+## Gate for dead cells
 
 ```{r}
-```{r}
-scPars <- ggcyto_par_set(limits = list(x = c(0,1e6), y = c(0,1e6)))
-ex <- Subset(dat.f1g, singlet.gate)
-polygon <- matrix(c(10^3, 10^5, 10^5, 10^3, 
-                      0, 0, 10^4, 10^2), ncol = 2)
-colnames(polygon) <- c("BL1.H", "BL3.H")
-inter.gate <- polygonGate(filterId = "inter", boundaries = polygon)
-ggcyto(ex, aes(x = BL1.H, y = BL3.H)) + geom_hex(bins = 128) + geom_gate(inter.gate) + geom_stats() + scPars + scale_x_logicle() + scale_y_logicle() + facet_wrap(Treatment ~ Date, ncol = 7, labeller = labeller(.cols = label_both)) 
-```
-Add this gate to the gatingSet
-
-```{r eval=FALSE, include=FALSE}
-gs_pop_add(gs, inter.gate, parent = "singlet", name = "inter")
-recompute(gs)
-```
-```
-
-> Gate for Red Positive Dead
-This is the dead population on the right side
-
-```{r}
-scPars <- ggcyto_par_set(limits = list(x = c(0,1e6), y = c(0,1e6)))
-ex <- Subset(dat.f1g, singlet.gate)
-polygon <- matrix(c(10^3, 10^2.5,10^3, 10^5,
-                    10^4.5, 10^2.2, 10^2.2, 10^4), ncol = 2)
-colnames(polygon) <- c("BL1.H", "BL3.H")
-dead.gate <- polygonGate(filterId = "dead", boundaries = polygon)
-ggcyto(ex, aes(x = BL1.H, y = BL3.H)) + geom_hex(bins = 128) + geom_gate(dead.gate) + geom_stats() + scPars + scale_x_logicle() + scale_y_logicle() + facet_wrap(Treatment ~ Date, ncol = 7, labeller = labeller(.cols = label_both)) 
-```
+for(date in unique(sample$Date)){
+  p <- ggcyto(gs[pData(gs)$Date == date], aes(x = BL1.H, y = BL3.H),
+              subset = "singlet") + 
+    geom_hex(bins = 128) + 
+    #geom_gate(live.gate.AmpB) + 
+    #geom_gate(inter.gate.AmpB) + 
+    geom_gate(dead.gate.AmpB) + 
+    geom_stats(location = "gate",  adjust = c(0.05, 1), digits = 3) + 
+    labs(title = paste0("Date: ", date)) +
+    facet_wrap(~ fct_inseq(Treatment), nrow = 2) + 
+    scPars + p.axis
+  print(p)
+}
 ```
 
 Add this gate to the gatingSet
 
-```{r}
 ```{r eval=FALSE, include=FALSE}
-gs_pop_add(gs, dead.gate, parent = "singlet", name = "dead")
+gs_pop_add(gs, dead.gate.AmpB, parent = "singlet", name = "dead")
 recompute(gs)
 ```
-```
 
-
->Exported gated event counts
+## Representative FGL staining pattern
+Since we modified the gates, will need to show the gating strategy again for AmpB treated _C. glabrata_.
 
 ```{r}
+scPars <- ggcyto_par_set(limits = list(x = c(0,10^5.5), y = c(0,10^4.5)))
+
+p <- ggcyto(gs[with(pData(gs), Date == "032924" & Treatment != "0.02")], 
+            aes(x = BL1.H, y = BL3.H), subset = "singlet") + 
+  geom_hex(bins = 128) + 
+  geom_gate(live.gate.AmpB, colour = "gray20") + 
+  geom_gate(inter.gate.AmpB, colour = "steelblue3") + 
+  geom_gate(dead.gate.AmpB, colour = "red3") + 
+  #geom_stats(location = "gate", adjust = c(0.02, 2), digits = 1, fill = NA) + 
+  facet_wrap(~ Treatment, nrow = 1,
+             labeller = labeller(Treatment = \(x) paste0(x, " ng/mL"))) + 
+  scPars + p.axis +
+  theme(plot.title = element_blank(), axis.title = element_blank(),
+        strip.text = element_text(size = rel(0.8), face = 2))
+p
+
+ggsave("../output/20250401-Cg-AmpB-FGL-representative-plot.png", 
+       height = 2, width = 8)
+```
+
+## Explore cell size difference in hydrogen peroxide treated cells
+This is based on Jinye's suggestion:
+> I am wondering is whether the cell size and granularity would affect the staining in different ways among species. Thus, I think it makes sense to plot the FL on FSC or SSC and perform a linear regression analysis for each species, if there is no significant difference, we can say the cell property of different species does not affect the staining in different ways. This is a simplified or adapted idea from PMID: 21952134.
+
+Let's plot the distribution of FSC.H as a proxy for cell size
 ```{r}
-gated_stats_f1g <- gs_pop_get_stats(gs) %>% 
-  as_tibble() %>% 
-  mutate(pop = gsub(".*/", "", pop), pop = gsub("-outlier", "cells", pop)) %>% 
-  pivot_wider(names_from = pop, names_prefix = "n_", values_from = count)
-gated_stats_f1g$percent_Dead <- gated_stats_f1g$n_dead / gated_stats_f1g$n_singlet
-gated_stats_f1g$percent_Live <- gated_stats_f1g$n_live / gated_stats_f1g$n_singlet
-gated_stats_f1g$percent_inter <- gated_stats_f1g$n_inter / gated_stats_f1g$n_singlet
-gated_stats_f1g$FGS <- 1*gated_stats_f1g$percent_Live + 0.5*gated_stats_f1g$percent_inter - gated_stats_f1g$percent_Dead
-gated_data <- cbind(pData(dat.f1g), gated_stats_f1g) %>% 
-    as.tibble() %>% relocate(name, .after = last_col())
-write_tsv(gated_data, file = "../Input/20240401-Cg-AmpB-gated-ht.tsv")
-print(gated_data)
-```
+mult_format <- function() {
+     function(x) format(x/10000,digits = 2) 
+}
 ```
 
+```{r}
+p1 <- ggcyto(gs, aes(x = FSC.H), subset = "singlet") + 
+  ggridges::geom_density_ridges(
+    aes(y = Treatment),
+        fill = "forestgreen", alpha = 0.8) + 
+  scale_x_continuous(labels = mult_format(), name = "FSC.H x 10000") +
+  facet_wrap(~.) + labs(title = NULL, y = "Amphotericin B (ng/mL)") +
+  theme(strip.text = element_blank())
+p1
+ggsave("../output/20250401-Cg-AmpB-cell-size-distribution-compare.png",
+       width = 3, height = 4)
+```
 
+> There is a leftward shift but no reverse shift at the lowest dose.
+
+# Extract gated stats and MFI
+
+% of events in each of the three gates
+```{r}
+# we are only interested in the populations after singlet gating
+nodes <- c("singlet", "live", "intermediate", "dead")
+# get the event count
+gated_cnt <- gs_pop_get_stats(gs, nodes, type = "count")
+# get the MFI for each parameter in each population of interest
+gated_mfi <- gs_pop_get_stats(gs, nodes, type = pop.MFI) %>% 
+  select(sample, pop, starts_with("FungaLight"))
+```
+
+Combine the data and meta data
+```{r}
+gated_stats <- full_join(gated_cnt, gated_mfi, by = c("sample", "pop")) %>% 
+  right_join(pData(gs), by = c("sample" = "name")) %>% 
+  relocate(Date, Treatment, .after = sample) %>% 
+  relocate(sample, .after = last_col())
+write_tsv(gated_stats, file = "../output/20250401-Cg-AmpB-FGL-gated-stats.tsv")
+
+# we don't need the MFI for the latter analysis. add meta data to gated_cnt
+gated_freq <- left_join(sample, gated_cnt, by = c("name" = "sample")) %>% 
+  select(-name) %>% 
+  group_by(Date, Treatment) %>% 
+  mutate(perc = count / count[pop == "singlet"], .after = count)
+```
+
+# Compare with CFU
+## Read CFU data 
+These are averaged CFU provided by Hanxi. Here are the raw cfu data
+```{r}
+cfu_raw <- read_tsv("../input/20240325-29-Cgla-AmpB-CFU-raw.tsv",
+                    col_types = "cccccciiii", comment = "#")
+cfu_calc <- cfu_raw %>% 
+  select(Date, Species, Treatment = AmpB_ng_mL, Group, 
+         Dilution, Raw_count = Total) %>% 
+  mutate(Date = ymd(Date) |> format("%m%d%y"),
+         Treatment = fct_inseq(Treatment),
+         CFU = Dilution * Raw_count) %>% 
+  # group by Date to calculate the ratio of MO to MM
+  group_by(Date) %>% 
+  mutate(p_live = CFU / CFU[Group == "MM"])
+
+# export the data for paper
+write_tsv(cfu_calc, file = "../output/20250325-Cg-AmpB-cfu-estimate.tsv")
+```
+
+## Calculate survival from FungaLight
+
+For FungaLight, we will calculate the percent live, intermediate and dead events.
+```{r}
+dye_based <- gated_freq %>% 
+  # record the total number of events as the count of singlets
+  group_by(Date, Treatment) %>% 
+  mutate(total_event_count = count[pop == "singlet"]) %>% 
+  # now we don't need the singlet population and the count variable
+  select(-count) %>% 
+  dplyr::filter(pop != "singlet") %>%
+  #ungroup() %>% 
+  # we will pivot this data frame to a wider format, making 
+  # two new variables out of the percentage variable
+  pivot_wider(names_from = pop, values_from = perc, names_prefix = "p_") %>% 
+  #mutate(p_sum = p_live + p_intermediate + p_dead) %>% 
+  relocate(p_live, .after = total_event_count)
+
+# export the data for paper
+write_tsv(dye_based, file = "../output/20250325-Cg-AmpB-FGL-estimate.tsv")
+```
+
+Combine the dye based results with cfu
+```{r}
+cfu_dye <- bind_rows(
+  CFU = select(cfu_calc, Date, Treatment, p_live),
+  FungaLight = select(dye_based, Date, Treatment, starts_with("p")),
+  .id = "Method"
+)
+```
+
+## Plotting the results
+CFU survival
+```{r}
+p.cfu <- cfu_calc %>% 
+  dplyr::filter(Treatment != "0.02") %>%
+  ggplot(aes(x = Treatment, y = p_live)) +
+  geom_bar(stat = "summary", fun = "mean", fill = "gray70", width = 0.8) +
+  geom_point(aes(shape = as.character(Date)), 
+             position = position_jitter(0.1),
+             size = 1.5) + 
+  scale_shape_manual(values = 4:7, guide = "none") +
+  scale_y_continuous(labels = scales::percent, 
+                     limits = c(NA, 1.05), breaks = seq(0,1,0.5)) +
+  labs(title = "CFU", x = bquote(H[2]*O[2]~(mM)), y = "% Live") +
+  theme(strip.text = element_text(size = rel(1.2), face = 2),
+        strip.background = element_blank(),
+        plot.title = element_text(hjust = 0.5))
+
+p.cfu
+```
+FungaLight results
+```{r}
+p.dye.side_by_side <- dye_based %>% 
+  dplyr::filter(Treatment != "0.02") %>%
+  select(Date, Treatment, p_live, p_intermediate) %>% 
+  pivot_longer(cols = c(p_live, p_intermediate), 
+               names_to = "par", values_to = "perc") %>% 
+  mutate(par = factor(par, levels = c("p_live", "p_intermediate"),
+                      labels = c("% live", "% intermediate"))) %>% 
+  ggplot(aes(x = fct_inseq(Treatment), y = perc, group = par)) +
+  geom_bar(aes(fill = par), position = position_dodge(0.9),
+           stat = "summary", fun = "mean", width = 0.8) +
+  geom_point(aes(shape = as.character(Date), color = par), 
+             position = position_jitterdodge(jitter.width = 0.1,
+                                             dodge.width = 0.9),
+             size = 1.2) + 
+  scale_fill_manual(NULL, values = c("gray70", "lightblue2")) +
+  scale_color_manual(NULL, values = c("black", "steelblue")) +
+  scale_shape_manual(values = 4:7, guide = "none") +
+  scale_y_continuous(labels = scales::percent, 
+                     limits = c(NA, 1.05), breaks = seq(0,1,0.5)) +
+  labs(title = "FungaLight", x = bquote(H[2]*O[2]~(mM)), y = NULL) +
+  theme(strip.text = element_text(size = rel(1.2), face = 2),
+        strip.background = element_blank(),
+        plot.title = element_text(hjust = 0.5),
+        legend.position = "inside",
+        legend.position.inside = c(0.8, 0.9))
+
+p.dye.side_by_side
+```
+
+## Statistical tests
+```{r}
+tmp <- aov(p_live ~ Treatment, data = dplyr::filter(cfu_calc, Treatment != "0.02"))
+TukeyHSD(tmp)
+```
+
+For p_live with FungaLight
+```{r}
+tmp <- dye_based %>% 
+  dplyr::filter(Treatment != "0.02") %>%
+  aov(p_live ~ fct_inseq(Treatment), data = .)
+TukeyHSD(tmp)
+```
+
+For p_intermediate with FungaLight
+```{r}
+tmp <- dye_based %>% 
+  dplyr::filter(Treatment != "0.02") %>%
+  aov(p_intermediate ~ fct_inseq(Treatment), data = .)
+TukeyHSD(tmp)
+```
 
 # Output Graph Production
->Several output graphs are produced, and are stored in the Output folder.
-```{r}
 
 ```{r}
 gated_data %>%
