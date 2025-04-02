@@ -378,43 +378,116 @@ ggplot(norm_data, aes(x = nGFP, y = nRFP)) +
   scale_y_logicle()
 
 ```
+# Define a function that can specify the polygon, treatment, with or w/o normalization
+```{r}
+# get polygon on ggplot:
+get_polygon <- function(stain, dat, live_dead) {
+  # Initialize polygon_df as a data frame
+  polygon_df <- data.frame(BL1.H = numeric(), BL3.H = numeric())
+  
+  # specify red population:
+  if (live_dead == "red_neg") {
+    # red negative population:
+  polygon_df <- as.data.frame(matrix(c(0, 10^5, 10^5, 0, 10^2.5, 10^2.5, 0, 0), ncol = 2))
+  colnames(polygon_df) <- c("BL1.H", "BL3.H")
+  }
+  else if (live_dead == "red_int") {
+  # red intermediate population:
+  polygon_df <- as.data.frame(matrix(c(10^5, 10^3,10^5,
+                    10^2.2, 10^2.2, 10^4), ncol = 2))
+  colnames(polygon_df) <- c("BL1.H", "BL3.H")
+  }
+  # red positive polulation:
+  else {
+  if (stain == "b") {
+      polygon_df <- as.data.frame(matrix(c(10^3, 10^2.5, 10^3, 10^5,
+                                     10^4.5, 10^2.2, 10^2.2, 10^4), 
+                                   ncol = 2))
+      colnames(polygon_df) <- c("BL1.H", "BL3.H")
+  } 
+  else if (stain == "p"){
+    # red positive dead for PI only
+    polygon_df <- as.data.frame(matrix(c(0, 10^3.6, 10^3.6, 0,
+                    10^2.15, 10^2.15, 1e6, 1e6), ncol = 2))
+    colnames(polygon_df) <- c("BL1.H", "BL3.H")
+  } 
+  else {print("b or p for stain")}}
+  
+  return(polygon_df) 
+}
 
+# calculate percentage of cells within the polygon
+get_polygon_pct <- function(stain, dat, live_dead) {
+  # Initialize polygon_df as a data frame
+  polygon_df <- data.frame(BL1.H = numeric(), BL3.H = numeric())
+  
+  # specify red population:
+  if (live_dead == "red_neg") {
+    # red negative population:
+  polygon_df <- as.data.frame(matrix(c(0, 10^5, 10^5, 0, 10^2.5, 10^2.5, 0, 0), ncol = 2))
+  colnames(polygon_df) <- c("BL1.H", "BL3.H")
+  }
+  else if (live_dead == "red_int") {
+  # red intermediate population:
+  polygon_df <- as.data.frame(matrix(c(10^5, 10^3,10^5,
+                    10^2.2, 10^2.2, 10^4), ncol = 2))
+  colnames(polygon_df) <- c("BL1.H", "BL3.H")
+  }
+  # red positive polulation:
+  else {
+  if (stain == "b") {
+      polygon_df <- as.data.frame(matrix(c(10^3, 10^2.5, 10^3, 10^5,
+                                     10^4.5, 10^2.2, 10^2.2, 10^4), 
+                                   ncol = 2))
+      colnames(polygon_df) <- c("BL1.H", "BL3.H")
+  } 
+  else if (stain == "p"){
+    # red positive dead for PI only
+    polygon_df <- as.data.frame(matrix(c(0, 10^3.6, 10^3.6, 0,
+                    10^2.15, 10^2.15, 1e6, 1e6), ncol = 2))
+    colnames(polygon_df) <- c("BL1.H", "BL3.H")
+  } 
+  else {print("b or p for stain")}}
+  
+    # Check if each point is inside the polygon
+  norm_data <- dat %>% mutate(inside_polygon = point.in.polygon(BL1.H, BL3.H, polygon_df$BL1.H, polygon_df$BL3.H) > 0)
 
+   # Summarize percentage inside
+  summary_counts <- norm_data %>%
+                    group_by(H2O2_conc, Treatment) %>% summarise(
+                    total_points = n(), inside_count = sum(inside_polygon, na.rm = TRUE),
+                    percentage_inside = round((inside_count / total_points) * 100, 3),  # Round for readability
+                    .groups = "drop")
+  
+  return(summary_counts)
+}
+
+test <- get_polygon_pct("b", norm_data, "red_neg")
+test_polygon <- get_polygon("b", norm_data, "red_neg")
+
+# need to specifically define a function only draw polygon; then define a function that get the polygon summary
+```
 
 ```{r}
-# plot the contour plot of BL1.H vs BL3.H and nBL1.H vs nBL3.H
 ggplot(norm_data, aes(x = BL1.H, y = BL3.H)) +
-  geom_density_2d() +  
+  geom_hex(bins = 80, aes(fill = ..count..)) +  # Hex binning
+  geom_polygon(data = test_polygon, aes(x = BL1.H, y = BL3.H), 
+               fill = NA, color = "red", size = 1.2) +  # Overlay polygon
+  geom_text(data = test, 
+            aes(x = 10^3.5, y = 10^4.5,  # Adjust position for visibility
+                label = paste0(percentage_inside, "%")), 
+            color = "black", size = 6, fontface = "bold") +  # Overlay text
   facet_grid(rows = vars(H2O2_conc), cols = vars(Treatment)) +
   theme_minimal() +
   labs(x = "BL1.H", y = "BL3.H") +
-  scale_x_log10(limits = c(10^1, 10^5), 
-                breaks = c(10^1, 10^2, 10^3, 10^4, 10^5)) +  # Adjusted to avoid 0
-  scale_y_log10(limits = c(10^1, 10^5), 
-                breaks = c(10^1, 10^2, 10^3, 10^4, 10^5))  # Adjusted to avoid 0
-
-
-
-ggplot(norm_data, aes(x = nGFP, y = nRFP)) +
-  geom_density_2d() +  
-  facet_grid(rows = vars(H2O2_conc), cols = vars(Treatment)) +
-  theme_minimal() +
-  labs(x = "nGFP", y = "nRFP") +
-  scale_x_log10(limits = c(10^1, 10^5), 
-                breaks = c(10^1, 10^2, 10^3, 10^4, 10^5)) +  # Adjusted to avoid 0
-  scale_y_log10(limits = c(10^1, 10^5), 
-                breaks = c(10^1, 10^2, 10^3, 10^4, 10^5))  # Adjusted to avoid 0
-```
-
-
-```{r}
-# visual inspection: if the normalization change the conclusion.
-
+  scale_x_logicle() +  
+  scale_y_logicle()
 
 ```
 
 
-### DO NOT USE THEM; has nothing to do with my cell distribution analysis
+
+### DO NOT USE THEM
 > Gate for Red Negative Population
 This is the live population with red fluorescence below 10^2.2
 
