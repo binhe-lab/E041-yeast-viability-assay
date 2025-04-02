@@ -212,13 +212,13 @@ p <- ggcyto(gs[with(pData(gs), Date == "032924" & Treatment != "0.02")],
   geom_hex(bins = 128) + 
   geom_gate(live.gate.AmpB, colour = "gray20") + 
   geom_gate(inter.gate.AmpB, colour = "steelblue3") + 
-  geom_gate(dead.gate.AmpB, colour = "red3") + 
+  #geom_gate(dead.gate.AmpB, colour = "orange2") + 
   #geom_stats(location = "gate", adjust = c(0.02, 2), digits = 1, fill = NA) + 
   facet_wrap(~ Treatment, nrow = 1,
              labeller = labeller(Treatment = \(x) paste0(x, " ng/mL"))) + 
   scPars + p.axis +
   theme(plot.title = element_blank(), axis.title = element_blank(),
-        strip.text = element_text(size = rel(0.8), face = 2))
+        strip.text = element_text(size = rel(0.8)))
 p
 
 ggsave("../output/20250401-Cg-AmpB-FGL-representative-plot.png", 
@@ -331,7 +331,7 @@ cfu_dye <- bind_rows(
 ```
 
 ## Plotting the results
-CFU survival
+### CFU survival
 ```{r}
 p.cfu <- cfu_calc %>% 
   dplyr::filter(Treatment != "0.02") %>%
@@ -343,14 +343,18 @@ p.cfu <- cfu_calc %>%
   scale_shape_manual(values = 4:7, guide = "none") +
   scale_y_continuous(labels = scales::percent, 
                      limits = c(NA, 1.05), breaks = seq(0,1,0.5)) +
-  labs(title = "CFU", x = bquote(H[2]*O[2]~(mM)), y = "% Live") +
-  theme(strip.text = element_text(size = rel(1.2), face = 2),
-        strip.background = element_blank(),
-        plot.title = element_text(hjust = 0.5))
+  labs(title = "CFU", x = "AmpB (ng/mL)", y = NULL) +
+  theme(
+    plot.title = element_text(size = rel(0.8), hjust = 0.5,
+                              margin = margin(b = 2)),
+    axis.text = element_text(size = rel(0.7)),
+    axis.title = element_text(size = rel(0.7))
+  )
 
 p.cfu
+ggsave("../output/20250401-Cg-AmpB-CFU.png", width = 3.5, height = 1.8)
 ```
-FungaLight results
+### FungaLight
 ```{r}
 p.dye.side_by_side <- dye_based %>% 
   dplyr::filter(Treatment != "0.02") %>%
@@ -371,19 +375,86 @@ p.dye.side_by_side <- dye_based %>%
   scale_shape_manual(values = 4:7, guide = "none") +
   scale_y_continuous(labels = scales::percent, 
                      limits = c(NA, 1.05), breaks = seq(0,1,0.5)) +
-  labs(title = "FungaLight", x = bquote(H[2]*O[2]~(mM)), y = NULL) +
-  theme(strip.text = element_text(size = rel(1.2), face = 2),
-        strip.background = element_blank(),
-        plot.title = element_text(hjust = 0.5),
-        legend.position = "inside",
-        legend.position.inside = c(0.8, 0.9))
+  labs(title = "FungaLight", x = "AmpB (ng/mL)", y = NULL) +
+  theme(
+    plot.title = element_text(size = rel(0.8), hjust = 0.5,
+                              margin = margin(b = 2)),
+    axis.text = element_text(size = rel(0.7)),
+    axis.title = element_text(size = rel(0.7)),
+    legend.position = "none"
+  )
 
 p.dye.side_by_side
+ggsave("../output/20250401-Cg-AmpB-FGL.png", width = 3.5, height = 1.8)
+```
+Assemble the plot
+```{r}
+plot_grid(
+  p.cfu + labs(x = NULL, y = NULL) +
+    theme(plot.title = element_text(size = rel(0.8),
+                                    face = 2, margin = margin(b = 2)),
+          axis.text = element_text(size = rel(0.7)),
+          axis.text.x = element_blank()),
+  NULL,
+  p.dye.side_by_side + labs(x = NULL, y = NULL) +
+    theme(#axis.text.y = element_blank(),
+          plot.title = element_text(size = rel(0.8),
+                                    face = 2, margin = margin(b = 1)),
+          axis.text = element_text(size = rel(0.7)),
+          legend.position = "none"),
+  nrow = 3, rel_heights = c(1, 0.3, 1.12)
+)
+ggsave("../output/20250401-Cg-AmpB-CFU-FGL-compare.png",
+       width = 3.5, height = 3.5)
+```
+
+### Compare CFU vs FGL
+We will focus on comparing the two methods for their p_live estimates
+```{r}
+tmp <- cfu_dye %>% 
+  select(-p_intermediate, -p_dead) %>% # remove unwanted variables
+  pivot_wider(names_from = Method, values_from = p_live) %>% 
+  dplyr::filter(!Treatment %in% c("0", "0.02")) # remove mock and 0.02 ng/mL
+# removing mock because CFU for mock is used to normalize the treatment groups
+
+p <- ggplot(tmp, aes(x = CFU, y = FungaLight)) + 
+  geom_abline(slope = 1, intercept = 0, linetype = 2,
+              color = "gray20", linewidth = 0.5) +
+  geom_point(aes(color = Treatment), size = 2) +
+  scale_color_brewer("AmpB (ng/mL)", palette = "Set1") +
+  scale_x_continuous(labels = scales::percent, 
+                     limits = c(NA, 1.05), breaks = seq(0,1,0.25)) +
+  scale_y_continuous(labels = scales::percent, 
+                     limits = c(NA, 1.05), breaks = seq(0,1,0.25)) +
+  theme(
+    legend.title = element_text(size = rel(0.8)),
+    legend.text = element_text(size = rel(0.8))
+  )
+
+
+p
+ggsave("../output/20240402-Cg-AmpB-CFU-vs-FGL-p_live-scatter.png",
+       width = 4.2, height = 2.5)
 ```
 
 ## Statistical tests
+Calculate Pearson's and Spearman's correlation between the p_live estimates using CFU vs FGL
 ```{r}
-tmp <- aov(p_live ~ Treatment, data = dplyr::filter(cfu_calc, Treatment != "0.02"))
+tmp <- cfu_dye %>% 
+  select(-p_intermediate, -p_dead) %>% # remove unwanted variables
+  pivot_wider(names_from = Method, values_from = p_live) %>% 
+  dplyr::filter(!Treatment %in% c("0", "0.02")) # remove mock and 0.02 ng/mL
+
+corr_p_live = c(
+  Pearson = cor(tmp$CFU, tmp$FungaLight, method = "pearson"),
+  Spearmann = cor(tmp$CFU, tmp$FungaLight, method = "spearman")
+)
+
+print(corr_p_live)
+```
+
+```{r}
+tmp <- aov(CFU ~ Treatment, data = dplyr::filter(cfu_calc, Treatment != "0.02"))
 TukeyHSD(tmp)
 ```
 
@@ -400,6 +471,13 @@ For p_intermediate with FungaLight
 tmp <- dye_based %>% 
   dplyr::filter(Treatment != "0.02") %>%
   aov(p_intermediate ~ fct_inseq(Treatment), data = .)
+TukeyHSD(tmp)
+```
+For p_dead with FungaLight
+```{r}
+tmp <- dye_based %>% 
+  dplyr::filter(Treatment != "0.02") %>%
+  aov(p_dead ~ fct_inseq(Treatment), data = .)
 TukeyHSD(tmp)
 ```
 
