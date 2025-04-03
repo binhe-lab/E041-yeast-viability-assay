@@ -1,1 +1,1 @@
-shared scripts
+shared scripts and settings
