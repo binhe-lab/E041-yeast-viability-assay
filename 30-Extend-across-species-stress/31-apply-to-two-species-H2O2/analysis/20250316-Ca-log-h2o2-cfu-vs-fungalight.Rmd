@@ -392,7 +392,7 @@ p.cfu <- cfu_calc %>%
              size = 1.5) + 
   scale_shape_manual(values = 4:6, guide = "none") +
   scale_y_continuous(labels = scales::percent, 
-                     limits = c(NA, 1.05), breaks = seq(0,1,0.5)) +
+                     limits = c(NA, 1.1), breaks = seq(0,1,0.5)) +
   labs(title = "CFU", x = bquote(H[2]*O[2]~(mM)), y = "% Live")
 
 p.cfu
@@ -418,7 +418,7 @@ p.dye.side_by_side <- dye_based %>%
   scale_color_manual(NULL, values = c("black", "steelblue")) +
   scale_shape_manual(values = 4:6, guide = "none") +
   scale_y_continuous(labels = scales::percent, 
-                     limits = c(NA, 1.05), breaks = seq(0,1,0.5)) +
+                     limits = c(NA, 1.1), breaks = seq(0,1,0.5)) +
   labs(title = "FungaLight", x = bquote(H[2]*O[2]~(mM)), y = NULL) +
   theme(legend.position = "inside",
         legend.position.inside = c(0.8, 0.9))
@@ -432,7 +432,7 @@ p.list <- list(
   labs(x = NULL, y = NULL),
   theme(
     plot.title = element_text(size = rel(0.7), hjust = 0.5,
-                              face = 2, margin = margin(b = 2)),
+                              margin = margin(b = 2)),
     axis.text  = element_text(size = rel(0.7))
   )
 )
