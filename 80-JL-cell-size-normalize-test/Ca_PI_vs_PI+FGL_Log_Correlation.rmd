@@ -17,6 +17,14 @@ library(cowplot)
 require(ggridges)
 library(PTXQC)
 library(ggplot2)
+library(RColorBrewer)
+library(ggplot2)
+library(ggridges)
+library(dplyr)
+library(ggplot2)
+library(dplyr)
+library(sp)
+
 ```
 
 # Import data
@@ -231,9 +239,6 @@ head(gated_data)
 
 
 ```{r}
-library(ggplot2)
-library(ggridges)
-library(dplyr)
 
 # Scale FSC.H values to match x-axis in the example (FSC.H / 10,000)
 gated_data <- gated_data %>%
@@ -295,9 +300,7 @@ I can define a function that specify the channel with or w/o normaliztion, and s
 
 # before normalization
 ```{r}
-library(ggplot2)
-library(dplyr)
-library(sp)
+
 
 # Define polygon with BL1.H and BL3.H
 polygon <- matrix(c(10^3, 10^2.5, 10^3, 10^5,
@@ -306,12 +309,12 @@ polygon <- matrix(c(10^3, 10^2.5, 10^3, 10^5,
 colnames(polygon) <- c("BL1.H", "BL3.H")
 
 # Check if each point is inside the polygon
-norm_data <- norm_data %>%
+inside_data <- norm_data %>%
   mutate(inside_polygon = point.in.polygon(BL1.H, BL3.H, 
                                            polygon[, 1], polygon[, 2]) > 0)
 
 # Summarize percentage inside
-summary_counts <- norm_data %>%
+summary_counts <- inside_data %>%
   group_by(H2O2_conc, Treatment) %>%
   summarise(
     total_points = n(),
@@ -322,6 +325,7 @@ summary_counts <- norm_data %>%
 
 ggplot(norm_data, aes(x = BL1.H, y = BL3.H)) +
   geom_hex(bins = 80, aes(fill = ..count..)) +  # Hex binning
+  scale_fill_gradientn(colours = rev(brewer.pal(11, "Spectral")), trans = "sqrt") +
   geom_polygon(data = as.data.frame(polygon), aes(x = BL1.H, y = BL3.H), 
                fill = NA, color = "red", size = 1.2) +  # Polygon overlay
   geom_text(data = summary_counts, 
@@ -349,12 +353,12 @@ polygon_df <- as.data.frame(matrix(c(10^3, 10^2.5, 10^3, 10^5,
 colnames(polygon_df) <- c("nGFP", "nRFP")
 
 # Check if each point is inside the polygon
-norm_data <- norm_data %>%
+inside_data <- norm_data %>%
   mutate(inside_polygon = point.in.polygon(nGFP, nRFP, 
                                            polygon_df$nGFP, polygon_df$nRFP) > 0)
 
 # Summarize percentage inside
-summary_counts <- norm_data %>%
+summary_counts <- inside_data %>%
   group_by(H2O2_conc, Treatment) %>%
   summarise(
     total_points = n(),
@@ -365,6 +369,7 @@ summary_counts <- norm_data %>%
 
 ggplot(norm_data, aes(x = nGFP, y = nRFP)) +
   geom_hex(bins = 80, aes(fill = ..count..)) +  # Hex binning
+  scale_fill_gradientn(colours = rev(brewer.pal(11, "Spectral")), trans = "sqrt") +
   geom_polygon(data = polygon_df, aes(x = nGFP, y = nRFP), 
                fill = NA, color = "red", size = 1.2) +  # Overlay polygon
   geom_text(data = summary_counts, 
@@ -378,110 +383,264 @@ ggplot(norm_data, aes(x = nGFP, y = nRFP)) +
   scale_y_logicle()
 
 ```
+
 # Define a function that can specify the polygon, treatment, with or w/o normalization
 ```{r}
-# get polygon on ggplot:
-get_polygon <- function(stain, dat, live_dead) {
-  # Initialize polygon_df as a data frame
-  polygon_df <- data.frame(BL1.H = numeric(), BL3.H = numeric())
-  
-  # specify red population:
-  if (live_dead == "red_neg") {
-    # red negative population:
-  polygon_df <- as.data.frame(matrix(c(0, 10^5, 10^5, 0, 10^2.5, 10^2.5, 0, 0), ncol = 2))
-  colnames(polygon_df) <- c("BL1.H", "BL3.H")
-  }
-  else if (live_dead == "red_int") {
-  # red intermediate population:
-  polygon_df <- as.data.frame(matrix(c(10^5, 10^3,10^5,
-                    10^2.2, 10^2.2, 10^4), ncol = 2))
-  colnames(polygon_df) <- c("BL1.H", "BL3.H")
-  }
-  # red positive polulation:
-  else {
-  if (stain == "b") {
-      polygon_df <- as.data.frame(matrix(c(10^3, 10^2.5, 10^3, 10^5,
-                                     10^4.5, 10^2.2, 10^2.2, 10^4), 
-                                   ncol = 2))
-      colnames(polygon_df) <- c("BL1.H", "BL3.H")
-  } 
-  else if (stain == "p"){
-    # red positive dead for PI only
-    polygon_df <- as.data.frame(matrix(c(0, 10^3.6, 10^3.6, 0,
-                    10^2.15, 10^2.15, 1e6, 1e6), ncol = 2))
-    colnames(polygon_df) <- c("BL1.H", "BL3.H")
-  } 
-  else {print("b or p for stain")}}
-  
-  return(polygon_df) 
-}
+library(sp)  # Ensure point.in.polygon() is available
 
-# calculate percentage of cells within the polygon
-get_polygon_pct <- function(stain, dat, live_dead) {
-  # Initialize polygon_df as a data frame
-  polygon_df <- data.frame(BL1.H = numeric(), BL3.H = numeric())
-  
-  # specify red population:
-  if (live_dead == "red_neg") {
-    # red negative population:
-  polygon_df <- as.data.frame(matrix(c(0, 10^5, 10^5, 0, 10^2.5, 10^2.5, 0, 0), ncol = 2))
-  colnames(polygon_df) <- c("BL1.H", "BL3.H")
-  }
-  else if (live_dead == "red_int") {
-  # red intermediate population:
-  polygon_df <- as.data.frame(matrix(c(10^5, 10^3,10^5,
-                    10^2.2, 10^2.2, 10^4), ncol = 2))
-  colnames(polygon_df) <- c("BL1.H", "BL3.H")
-  }
-  # red positive polulation:
+# Function to get polygon coordinates
+get_polygon <- function(stain, normalized, live_dead) {
+  # Specify normalization
+  # initialize data.frame
+  if (normalized =="Yes") {
+  polygon_df <- data.frame(nGFP = numeric(), nRFP = numeric())}
   else {
-  if (stain == "b") {
-      polygon_df <- as.data.frame(matrix(c(10^3, 10^2.5, 10^3, 10^5,
-                                     10^4.5, 10^2.2, 10^2.2, 10^4), 
-                                   ncol = 2))
-      colnames(polygon_df) <- c("BL1.H", "BL3.H")
-  } 
-  else if (stain == "p"){
-    # red positive dead for PI only
-    polygon_df <- as.data.frame(matrix(c(0, 10^3.6, 10^3.6, 0,
-                    10^2.15, 10^2.15, 1e6, 1e6), ncol = 2))
-    colnames(polygon_df) <- c("BL1.H", "BL3.H")
-  } 
-  else {print("b or p for stain")}}
+  polygon_df <- data.frame(BL1.H = numeric(), BL3.H = numeric())}
   
-    # Check if each point is inside the polygon
-  norm_data <- dat %>% mutate(inside_polygon = point.in.polygon(BL1.H, BL3.H, polygon_df$BL1.H, polygon_df$BL3.H) > 0)
+  # Define red population polygon
+  # 3 gates for Both
+  if (stain == "b") {
+    if (live_dead == "red_neg") {
+      polygon_df <- data.frame(x = c(0, 10^5, 10^5, 0), y = c(10^2.5, 10^2.5, 0, 0))
+  } 
+    else if (live_dead == "red_int") {
+      polygon_df <- data.frame(x = c(10^5, 10^3, 10^5), y = c(10^2.2, 10^2.2, 10^4))
+  } 
+    else if (live_dead == "red_pos") {
+      polygon_df <- data.frame(x = c(10^3, 10^2.5, 10^3, 10^5), 
+                               y = c(10^4.5, 10^2.2, 10^2.2, 10^4))
+    }} 
+    
+  else if (stain == "p") {
+      polygon_df <- data.frame(x = c(0, 10^3.6, 10^3.6, 0), 
+                               y = c(10^2.15, 10^2.15, 1e6, 1e6))
+    } 
+  
+  axis_name <- if (normalized == "Yes") c("nGFP", "nRFP") else c("BL1.H", "BL3.H")
+  colnames(polygon_df) <- axis_name
+  
+  return(polygon_df) }
 
-   # Summarize percentage inside
-  summary_counts <- norm_data %>%
-                    group_by(H2O2_conc, Treatment) %>% summarise(
-                    total_points = n(), inside_count = sum(inside_polygon, na.rm = TRUE),
-                    percentage_inside = round((inside_count / total_points) * 100, 3),  # Round for readability
-                    .groups = "drop")
+zigzag <- get_polygon("p","No")
+test_polygon <- get_polygon("b", "No", "red_pos")  # Correct argument order
+```
+
+# test Chatgpt code
+```{r}
+get_polygon_pct <- function(stain, dat, live_dead, normalized) {
+  polygon_draw <- get_polygon(stain, normalized, live_dead)  # Get polygon
+  # classify by stain
+  if (stain == "b") {filter_dat <- dplyr::filter(dat, Treatment == "Both")}
+  else if (stain == "p") {filter_dat <- dplyr::filter(dat, Treatment == "PI")}
+  
+# Check if each point is inside the polygon
+  if (normalized =="Yes") {
+  inside_data <- filter_dat %>%
+  mutate(inside_polygon = point.in.polygon(nGFP, nRFP, 
+                                           polygon_draw[, 1], polygon_draw[, 2]) > 0)}
+  else {
+  inside_data <- filter_dat %>%
+  mutate(inside_polygon = point.in.polygon(BL1.H, BL3.H, 
+                                           polygon_draw[, 1], polygon_draw[, 2]) > 0)}
+    
+  # Summarize percentage inside
+  summary_counts <- inside_data %>%
+    group_by(H2O2_conc, Date) %>%
+    summarise(
+      total_points = n(), 
+      inside_count = sum(inside_polygon, na.rm = TRUE),
+      percentage_inside = round((inside_count / total_points) * 100, 3),
+      .groups = "drop"
+    )
   
   return(summary_counts)
 }
 
-test <- get_polygon_pct("b", norm_data, "red_neg")
-test_polygon <- get_polygon("b", norm_data, "red_neg")
-
-# need to specifically define a function only draw polygon; then define a function that get the polygon summary
 ```
 
+
+# Polygon gate for Both Staining; red positive
 ```{r}
-ggplot(norm_data, aes(x = BL1.H, y = BL3.H)) +
-  geom_hex(bins = 80, aes(fill = ..count..)) +  # Hex binning
-  geom_polygon(data = test_polygon, aes(x = BL1.H, y = BL3.H), 
-               fill = NA, color = "red", size = 1.2) +  # Overlay polygon
-  geom_text(data = test, 
-            aes(x = 10^3.5, y = 10^4.5,  # Adjust position for visibility
-                label = paste0(percentage_inside, "%")), 
-            color = "black", size = 6, fontface = "bold") +  # Overlay text
-  facet_grid(rows = vars(H2O2_conc), cols = vars(Treatment)) +
+b_polygon <- get_polygon("b","No","red_pos")
+b_pct <- get_polygon_pct("b", norm_data, "red_pos", "No")
+
+b_data_pos <- dplyr::filter(norm_data, Treatment == "Both") %>% 
+  ggplot(aes(x = BL1.H, y = BL3.H)) +
+  geom_hex(bins = 80, aes(fill = ..count..)) +  
+  scale_fill_gradientn(colours = rev(brewer.pal(11, "Spectral")), trans = "sqrt") +
+  geom_polygon(data = b_polygon, aes(x = BL1.H, y = BL3.H, group = 1), 
+               fill = NA, color = "red", size = 1.2) +  
+  geom_text(data = b_pct, 
+            aes(x = 10^3.5, y = 10^4.5, label = paste0(percentage_inside, "%")), 
+            color = "black", size = 4, fontface = "bold", hjust = 1.2) +  
+  facet_grid(rows = vars(H2O2_conc), cols = vars(Date)) +
   theme_minimal() +
   labs(x = "BL1.H", y = "BL3.H") +
   scale_x_logicle() +  
   scale_y_logicle()
+
+b_data_pos
+#ggsave("./output/Ca-Both_raw_red_positive_d040225.png", width = 7, height = 4)
+
+b_polygon <- get_polygon("b","Yes","red_pos")
+b_pct <- get_polygon_pct("b", norm_data, "red_pos", "Yes")
+
+b_data_pos_raw <- dplyr::filter(norm_data, Treatment == "Both") %>% 
+  ggplot(aes(x = nGFP, y = nRFP)) +
+  geom_hex(bins = 80, aes(fill = ..count..)) +  
+  scale_fill_gradientn(colours = rev(brewer.pal(11, "Spectral")), trans = "sqrt") +
+  geom_polygon(data = b_polygon, aes(x = nGFP, y = nRFP, group = 1), 
+               fill = NA, color = "red", size = 1.2) +  
+  geom_text(data = b_pct, 
+            aes(x = 10^3.5, y = 10^4.5, label = paste0(percentage_inside, "%")), 
+            color = "black", size = 4, fontface = "bold", hjust = 1.2) +  
+  facet_grid(rows = vars(H2O2_conc), cols = vars(Date)) +
+  theme_minimal() +
+  labs(x = "nGFP", y = "nRFP") +
+  scale_x_logicle() +  
+  scale_y_logicle()
+
+b_data_pos_raw
+#ggsave("./output/Ca-Both_normalized_red_positive_d040225.png", width = 7, height = 4)
+```
+
+
+# Polygon gate for Both: red intermediate
+```{r}
+b_polygon <- get_polygon("b","No","red_int")
+b_pct <- get_polygon_pct("b", norm_data, "red_int", "No")
+
+b_data_pos <- dplyr::filter(norm_data, Treatment == "Both") %>% 
+  ggplot(aes(x = BL1.H, y = BL3.H)) +
+  geom_hex(bins = 80, aes(fill = ..count..)) +  
+  scale_fill_gradientn(colours = rev(brewer.pal(11, "Spectral")), trans = "sqrt") +
+  geom_polygon(data = b_polygon, aes(x = BL1.H, y = BL3.H, group = 1), 
+               fill = NA, color = "red", size = 1.2) +  
+  geom_text(data = b_pct, 
+            aes(x = 10^3.5, y = 10^4.5, label = paste0(percentage_inside, "%")), 
+            color = "black", size = 4, fontface = "bold", hjust = 1.2) +  
+  facet_grid(rows = vars(H2O2_conc), cols = vars(Date)) +
+  theme_minimal() +
+  labs(x = "BL1.H", y = "BL3.H") +
+  scale_x_logicle() +  
+  scale_y_logicle()
+
+b_data_pos
+#ggsave("./output/Ca-Both_raw_red_inter_d040225.png", width = 7, height = 4)
+
+b_polygon <- get_polygon("b","Yes","red_int")
+b_pct <- get_polygon_pct("b", norm_data, "red_int", "Yes")
+
+b_data_pos_raw <- dplyr::filter(norm_data, Treatment == "Both") %>% 
+  ggplot(aes(x = nGFP, y = nRFP)) +
+  geom_hex(bins = 80, aes(fill = ..count..)) +  
+  scale_fill_gradientn(colours = rev(brewer.pal(11, "Spectral")), trans = "sqrt") +
+  geom_polygon(data = b_polygon, aes(x = nGFP, y = nRFP, group = 1), 
+               fill = NA, color = "red", size = 1.2) +  
+  geom_text(data = b_pct, 
+            aes(x = 10^3.5, y = 10^4.5, label = paste0(percentage_inside, "%")), 
+            color = "black", size = 4, fontface = "bold", hjust = 1.2) +  
+  facet_grid(rows = vars(H2O2_conc), cols = vars(Date)) +
+  theme_minimal() +
+  labs(x = "nGFP", y = "nRFP") +
+  scale_x_logicle() +  
+  scale_y_logicle()
+
+b_data_pos_raw
+#ggsave("./output/Ca-Both_normalized_red_inter_d040225.png", width = 7, height = 4)
+```
+
+
+# Polygon gate for Both: red negative
+```{r}
+b_polygon <- get_polygon("b","No","red_neg")
+b_pct <- get_polygon_pct("b", norm_data, "red_neg", "No")
+
+b_data_pos <- dplyr::filter(norm_data, Treatment == "Both") %>% 
+  ggplot(aes(x = BL1.H, y = BL3.H)) +
+  geom_hex(bins = 80, aes(fill = ..count..)) +  
+  scale_fill_gradientn(colours = rev(brewer.pal(11, "Spectral")), trans = "sqrt") +
+  geom_polygon(data = b_polygon, aes(x = BL1.H, y = BL3.H, group = 1), 
+               fill = NA, color = "red", size = 1.2) +  
+  geom_text(data = b_pct, 
+            aes(x = 10^3.5, y = 10^4.5, label = paste0(percentage_inside, "%")), 
+            color = "black", size = 4, fontface = "bold", hjust = 1.2) +  
+  facet_grid(rows = vars(H2O2_conc), cols = vars(Date)) +
+  theme_minimal() +
+  labs(x = "BL1.H", y = "BL3.H") +
+  scale_x_logicle() +  
+  scale_y_logicle()
+
+b_data_pos
+#ggsave("./output/Ca-Both_raw_red_neg_d040225.png", width = 7, height = 4)
+
+b_polygon <- get_polygon("b","Yes","red_neg")
+b_pct <- get_polygon_pct("b", norm_data, "red_neg", "Yes")
+
+b_data_pos_raw <- dplyr::filter(norm_data, Treatment == "Both") %>% 
+  ggplot(aes(x = nGFP, y = nRFP)) +
+  geom_hex(bins = 80, aes(fill = ..count..)) +  
+  scale_fill_gradientn(colours = rev(brewer.pal(11, "Spectral")), trans = "sqrt") +
+  geom_polygon(data = b_polygon, aes(x = nGFP, y = nRFP, group = 1), 
+               fill = NA, color = "red", size = 1.2) +  
+  geom_text(data = b_pct, 
+            aes(x = 10^3.5, y = 10^4.5, label = paste0(percentage_inside, "%")), 
+            color = "black", size = 4, fontface = "bold", hjust = 1.2) +  
+  facet_grid(rows = vars(H2O2_conc), cols = vars(Date)) +
+  theme_minimal() +
+  labs(x = "nGFP", y = "nRFP") +
+  scale_x_logicle() +  
+  scale_y_logicle()
+
+b_data_pos_raw
+#ggsave("./output/Ca-Both_normalized_red_neg_d040225.png", width = 7, height = 4)
+
+```
+
+
+# Polygon gate for PI staining
+```{r}
+pi_polygon <- get_polygon("p","No")
+pi_pct <- get_polygon_pct("p", norm_data, "red_pos", "No")
+
+pi_data1 <- dplyr::filter(norm_data, Treatment == "PI") %>% 
+  ggplot(aes(x = BL1.H, y = BL3.H)) +
+  geom_hex(bins = 80, aes(fill = ..count..)) +  
+  scale_fill_gradientn(colours = rev(brewer.pal(11, "Spectral")), trans = "sqrt") +
+  geom_polygon(data = pi_polygon, aes(x = BL1.H, y = BL3.H, group = 1), 
+               fill = NA, color = "red", size = 1.2) +  
+  geom_text(data = pi_pct, 
+            aes(x = 10^3.5, y = 10^4.5, label = paste0(percentage_inside, "%")), 
+            color = "black", size = 4, fontface = "bold", hjust = 1.2) +  
+  facet_grid(rows = vars(H2O2_conc), cols = vars(Date)) +
+  theme_minimal() +
+  labs(x = "BL1.H", y = "BL3.H") +
+  scale_x_logicle() +  
+  scale_y_logicle()
+
+pi_data1
+#ggsave("./output/Ca-PI_raw_red_positive_d040225.png", width = 7, height = 4)
+
+pi_polygon <- get_polygon("p","Yes")
+pi_pct <- get_polygon_pct("p", norm_data, "red_pos", "Yes")
+
+pi_data2 <- dplyr::filter(norm_data, Treatment == "PI") %>% 
+  ggplot(aes(x = nGFP, y = nRFP)) +
+  geom_hex(bins = 80, aes(fill = ..count..)) +  
+  scale_fill_gradientn(colours = rev(brewer.pal(11, "Spectral")), trans = "sqrt") +
+  geom_polygon(data = pi_polygon, aes(x = nGFP, y = nRFP, group = 1), 
+               fill = NA, color = "red", size = 1.2) +  
+  geom_text(data = pi_pct, 
+            aes(x = 10^3.5, y = 10^4.5, label = paste0(percentage_inside, "%")), 
+            color = "black", size = 4, fontface = "bold", hjust = 1.2) +  
+  facet_grid(rows = vars(H2O2_conc), cols = vars(Date)) +
+  theme_minimal() +
+  labs(x = "nGFP", y = "nRFP") +
+  scale_x_logicle() +  
+  scale_y_logicle()
+
+pi_data2
+#ggsave("./output/Ca-PI_normalized_red_positive_d040225.png", width = 7, height = 4)
 
 ```
 
@@ -686,9 +845,9 @@ p1 <- combined_data1 %>%
   theme_cowplot(font_size = 20) +
   facet_wrap(~ Method)
 
-p1
+#p1
 
-ggsave("./output/20240618-Ca-Log-Gated.png", width = 7, height = 4)
+#ggsave("./output/20240618-Ca-Log-Gated.png", width = 7, height = 4)
 ```
 
 ```{r}
@@ -709,9 +868,9 @@ p1 <- combined_data1 %>%
   theme_cowplot(font_size = 20) +
   facet_wrap(~ Method)
 
-p1
+#p1
 
-ggsave("../output/20240704-Ca-Log-Gated.png", width = 7, height = 4)
+#ggsave("../output/20240704-Ca-Log-Gated.png", width = 7, height = 4)
 ```
 
 Statistical Test
