@@ -421,7 +421,7 @@ p <- ggplot(tmp, aes(x = CFU, y = FungaLight)) +
   geom_abline(slope = 1, intercept = 0, linetype = 2,
               color = "gray20", linewidth = 0.5) +
   geom_point(aes(color = Treatment), size = 2) +
-  scale_color_brewer("AmpB (ng/mL)", palette = "Set1") +
+  scale_color_viridis_d("AmpB (ng/mL)", option = "D", begin = 0.2) +
   scale_x_continuous(labels = scales::percent, 
                      limits = c(NA, 1.05), breaks = seq(0,1,0.25)) +
   scale_y_continuous(labels = scales::percent, 
@@ -454,7 +454,7 @@ print(corr_p_live)
 ```
 
 ```{r}
-tmp <- aov(CFU ~ Treatment, data = dplyr::filter(cfu_calc, Treatment != "0.02"))
+tmp <- aov(p_live ~ Treatment, data = dplyr::filter(cfu_calc, Treatment != "0.02"))
 TukeyHSD(tmp)
 ```
 
