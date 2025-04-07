@@ -460,8 +460,8 @@ b_data_pos <- dplyr::filter(norm_data, Treatment == "Both") %>%
   geom_polygon(data = b_polygon, aes(x = BL1.H, y = BL3.H, group = 1), 
                fill = NA, color = "red", size = 1.2) +  
   geom_text(data = b_pct, 
-            aes(x = 10^3.5, y = 10^4.5, label = paste0(percentage_inside, "%")), 
-            color = "black", size = 4, fontface = "bold", hjust = 1.2) +  
+            aes(x = 10^3.5, y = 10^4, label = paste0(percentage_inside, "%")), 
+            color = "black", size = 4, fontface = "bold") + 
   facet_grid(rows = vars(H2O2_conc), cols = vars(Date)) +
   theme_minimal() +
   labs(x = "BL1.H", y = "BL3.H") +
@@ -469,7 +469,7 @@ b_data_pos <- dplyr::filter(norm_data, Treatment == "Both") %>%
   scale_y_logicle()
 
 b_data_pos
-#ggsave("./output/Ca-Both_raw_red_positive_d040225.png", width = 7, height = 4)
+ggsave("./output/Ca-Both_raw_red_positive_d040225.png", width = 7, height = 4)
 
 b_polygon <- get_polygon("b","Yes","red_pos")
 b_pct <- get_polygon_pct("b", norm_data, "red_pos", "Yes")
@@ -481,8 +481,8 @@ b_data_pos_raw <- dplyr::filter(norm_data, Treatment == "Both") %>%
   geom_polygon(data = b_polygon, aes(x = nGFP, y = nRFP, group = 1), 
                fill = NA, color = "red", size = 1.2) +  
   geom_text(data = b_pct, 
-            aes(x = 10^3.5, y = 10^4.5, label = paste0(percentage_inside, "%")), 
-            color = "black", size = 4, fontface = "bold", hjust = 1.2) +  
+            aes(x = 10^3.5, y = 10^4, label = paste0(percentage_inside, "%")), 
+            color = "black", size = 4, fontface = "bold") + 
   facet_grid(rows = vars(H2O2_conc), cols = vars(Date)) +
   theme_minimal() +
   labs(x = "nGFP", y = "nRFP") +
@@ -490,7 +490,7 @@ b_data_pos_raw <- dplyr::filter(norm_data, Treatment == "Both") %>%
   scale_y_logicle()
 
 b_data_pos_raw
-#ggsave("./output/Ca-Both_normalized_red_positive_d040225.png", width = 7, height = 4)
+ggsave("./output/Ca-Both_normalized_red_positive_d040225.png", width = 7, height = 4)
 ```
 
 
@@ -553,7 +553,7 @@ b_data_pos <- dplyr::filter(norm_data, Treatment == "Both") %>%
                fill = NA, color = "red", size = 1.2) +  
   geom_text(data = b_pct, 
             aes(x = 10^3.5, y = 10^4.5, label = paste0(percentage_inside, "%")), 
-            color = "black", size = 4, fontface = "bold", hjust = 1.2) +  
+            color = "black", size = 4, fontface = "bold") +  
   facet_grid(rows = vars(H2O2_conc), cols = vars(Date)) +
   theme_minimal() +
   labs(x = "BL1.H", y = "BL3.H") +
@@ -574,7 +574,7 @@ b_data_pos_raw <- dplyr::filter(norm_data, Treatment == "Both") %>%
                fill = NA, color = "red", size = 1.2) +  
   geom_text(data = b_pct, 
             aes(x = 10^3.5, y = 10^4.5, label = paste0(percentage_inside, "%")), 
-            color = "black", size = 4, fontface = "bold", hjust = 1.2) +  
+            color = "black", size = 4, fontface = "bold") +  
   facet_grid(rows = vars(H2O2_conc), cols = vars(Date)) +
   theme_minimal() +
   labs(x = "nGFP", y = "nRFP") +

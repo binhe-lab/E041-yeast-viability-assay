@@ -423,7 +423,7 @@ b_data_pos <- dplyr::filter(norm_data, Treatment == "Both") %>%
                fill = NA, color = "red", size = 1.2) +  
   geom_text(data = b_pct, 
             aes(x = 10^3.5, y = 10^4.5, label = paste0(percentage_inside, "%")), 
-            color = "black", size = 4, fontface = "bold", hjust = 1.2) +  
+            color = "black", size = 4, fontface = "bold") +  
   facet_grid(rows = vars(H2O2_conc), cols = vars(Date)) +
   theme_minimal() +
   labs(x = "BL1.H", y = "BL3.H") +
@@ -444,7 +444,7 @@ b_data_pos_raw <- dplyr::filter(norm_data, Treatment == "Both") %>%
                fill = NA, color = "red", size = 1.2) +  
   geom_text(data = b_pct, 
             aes(x = 10^3.5, y = 10^4.5, label = paste0(percentage_inside, "%")), 
-            color = "black", size = 4, fontface = "bold", hjust = 1.2) +  
+            color = "black", size = 4, fontface = "bold") +  
   facet_grid(rows = vars(H2O2_conc), cols = vars(Date)) +
   theme_minimal() +
   labs(x = "nGFP", y = "nRFP") +
