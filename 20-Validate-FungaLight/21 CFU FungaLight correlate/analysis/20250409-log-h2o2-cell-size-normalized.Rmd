@@ -1,0 +1,466 @@
+---
+title: "Compare CFU and FungaLight for log dilution of H2O2, cell-size normalized"
+author: Bin He
+date: "2024-04-09 (updated `r Sys.time()`)"
+output:
+  html_notebook:
+    toc: true
+    toc_depth: 4
+    code_folding: hide
+---
+
+```{r setup, message=FALSE}
+require(tidyverse)
+require(flowCore)
+require(flowClust)
+require(openCyto)
+require(ggcyto)
+require(cowplot)
+#require(ggrdiges)
+```
+
+```{r}
+old <- theme_set(theme_minimal(base_size = 14) + panel_border(color = "gray20"))
+```
+
+# Background & Goal
+This is a duplicate of the similarly-named R markdown on 2024-03-21. The goal of this modified analysis is to test the effect of normalizing the fluorescence levels by cell size.
+
+## original background and gaol
+Having optimized the FungaLight assay conditions, we would like to compare its estimates to those by CFU and PI alone, two commonly used methods in the literature.
+
+The experiments for _C. glabrata_ were conducted on 2024.02.14-17. Post-treatment cells were stained with PI or PI+SYTO9, and run through flow cytometry. The same sample was also plated for CFU.
+
+A similar experiment was done for _S. cerevisiae_ on 2024.02.25-28.
+
+# Import data
+> FCS files are stored in rdss/Users/Hanxi/flow cytometry under the above dates. They are copied to this repository under the same names.
+
+_note_: samples are labeled by the H2O2 doses they were treated with. an exception is "5C", which refers to samples taken prior to the treatment and stored in the fridge at 5 Celsius until treated samples are ready for flow cytometer. this was done as a control experiment. ask Hanxi about the specific rationale. 
+
+```{r}
+# use relative path to make it easier for collaboration
+data.path = "../input/20240214-17 Log H2O2 correlation Cg/"
+dat0 <- read.flowSet(path = data.path, pattern = "*.fcs",
+                     transformation = FALSE,  # the original values are already linearized. 
+                     emptyValue = FALSE,  alter.names = TRUE,   # change parameter names to R format
+                     column.pattern = ".H|FSC|SSC") # only load the height variables for the fluorescent parameters
+```
+
+Simplify the sample names
+
+```{r}
+oriNames <- sampleNames(dat0)
+tmp <- str_split(oriNames, pattern = "[ _]+", simplify = TRUE)[,c(1, 6, 7)]
+colnames(tmp) <- c("Date", "Treatment", "Dye")
+#treatment.levels <- c("mock", "5C", "10", "100", "1000")
+sample <- data.frame(tmp) %>% 
+  mutate(
+    Dye = ifelse(Dye == "p.fcs", "PI", ifelse(Dye == "b.fcs", "Both", Dye)), 
+    Treatment = fct_inorder(Treatment),
+    name = paste(Date, paste0(Treatment, 
+                              ifelse(Treatment == "5C", "", "mM")), 
+                 Dye, sep = "_")
+  )
+rownames(sample) <- oriNames
+dat <- dat0 # make a copy
+pData(dat) <- sample
+write_tsv(pData(dat), file = "../input/20240214-log-h2o2-cg-sample.tsv")
+```
+
+
+# Calculate cell normalized fluorescence
+
+Following the example in the [flowCore manual](https://bioconductor.org/packages/release/bioc/vignettes/flowCore/inst/doc/HowTo-flowCore.pdf), we first create a transformation function, then set up a `transformList` object, and finally use it to transform the flowSet _before_ constructing the gatingSet
+```{r}
+mfsc <- 5e5 # this is just used to make the new variable on a similar scale as 
+            # the original one, by making the denominator ~1
+# Create new parameters: BL1.H / FSC.H^1.5 and BL3.H / FSC.H^1.5
+# this is not recommended for programmatic use based on flowCore manual,
+# but the recommended transformList approach requires writing hard-to-read
+# custom functions. let's see if this would work.
+
+# FSC.H^{3/2} is roughly the volume of a sphere. Here we use an exponent of
+# 1.2 for BL1.H and 1 for BL3.H based on empirical information (see below)
+ndat <- transform(dat,
+                  BL1.H = `BL1.H` / ((`FSC.H`/mfsc)^1.2),
+                  BL3.H = `BL3.H` / ((`FSC.H`/mfsc)^0.8))
+```
+
+For the BL1.H channel, we can see below that the 'cell size normalized' fluorescence values are less correlated with FSC when the sample contains highly fluorescent cells (damaged or dead).
+```{r}
+p1 <- ggcyto(dat[pData(dat)$Treatment == "100" & pData(dat)$Dye == "Both"], 
+             aes(x = FSC.H, y = BL1.H)) + 
+  geom_hex(bins = 64) + scale_y_logicle() +
+  scale_x_continuous(labels = scales::label_number(scale = 1e-4)) +
+  stat_smooth(method = "lm", formulat = y~x) +
+  labs(x = "FSC.H", y = "BL1.H")
+
+p2 <- ggcyto(ndat[pData(ndat)$Treatment == "100" & pData(ndat)$Dye == "Both"], 
+             aes(x = FSC.H, y = BL1.H)) + 
+  geom_hex(bins = 64) + scale_y_logicle() +
+  scale_x_continuous(labels = scales::label_number(scale = 1e-4)) +
+  stat_smooth(method = "lm", formulat = y~x) +
+  labs(x = "FSC.H", y = "normalized BL1")
+plot_grid(as.ggplot(p1), as.ggplot(p2), nrow = 2)
+```
+And also in mock treated sample.
+In samples with lowly fluorescent populations, the correction actually induces a negative correlation between the fluorescence signals and FSC, even if I set the exponent to 1.
+```{r}
+p1 <- ggcyto(dat[pData(dat)$Treatment == "0" & pData(dat)$Dye == "Both"], 
+             aes(x = FSC.H, y = BL1.H)) + 
+  geom_hex(bins = 64) + scale_y_logicle() +
+  scale_x_continuous(labels = scales::label_number(scale = 1e-4)) +
+  stat_smooth(method = "lm", formulat = y~x) +
+  labs(x = "FSC.H", y = "BL1.H")
+
+p2 <- ggcyto(ndat[pData(ndat)$Treatment == "0" & pData(ndat)$Dye == "Both"], 
+             aes(x = FSC.H, y = BL1.H)) + 
+  geom_hex(bins = 64) + scale_y_logicle() +
+  scale_x_continuous(labels = scales::label_number(scale = 1e-4)) +
+  stat_smooth(method = "lm", formulat = y~x) +
+  labs(x = "FSC.H", y = "normalized BL1")
+plot_grid(as.ggplot(p1), as.ggplot(p2), nrow = 2)
+```
+For the BL3.H channel, we can see below that the 'cell size normalized' fluorescence values are less correlated with FSC when the sample contains highly fluorescent cells (damaged or dead).
+```{r}
+p1 <- ggcyto(dat[pData(dat)$Treatment == "100" & pData(dat)$Dye == "Both"], 
+             aes(x = FSC.H, y = BL3.H)) + 
+  geom_hex(bins = 64) + scale_y_logicle() +
+  scale_x_continuous(labels = scales::label_number(scale = 1e-4)) +
+  stat_smooth(method = "lm", formulat = y~x) +
+  labs(x = "FSC.H", y = "BL3.H")
+
+p2 <- ggcyto(ndat[pData(ndat)$Treatment == "100" & pData(ndat)$Dye == "Both"], 
+             aes(x = FSC.H, y = BL3.H)) + 
+  geom_hex(bins = 64) + scale_y_logicle() +
+  scale_x_continuous(labels = scales::label_number(scale = 1e-4)) +
+  stat_smooth(method = "lm", formulat = y~x) +
+  labs(x = "FSC.H", y = "normalized BL3")
+plot_grid(as.ggplot(p1), as.ggplot(p2), nrow = 2)
+```
+
+In samples with lowly fluorescent populations, the correction could induce a negative correlation between the fluorescence signals and FSC, even if I set the exponent to 1.
+```{r}
+p1 <- ggcyto(dat[pData(dat)$Treatment == "0" & pData(dat)$Dye == "Both"], 
+             aes(x = FSC.H, y = BL3.H)) + 
+  geom_hex(bins = 64) + scale_y_logicle() +
+  scale_x_continuous(labels = scales::label_number(scale = 1e-4)) +
+  stat_smooth(method = "lm", formulat = y~x) +
+  labs(x = "FSC.H", y = "BL3.H")
+
+p2 <- ggcyto(ndat[pData(ndat)$Treatment == "0" & pData(ndat)$Dye == "Both"], 
+             aes(x = FSC.H, y = BL3.H)) + 
+  geom_hex(bins = 64) + scale_y_logicle() +
+  scale_x_continuous(labels = scales::label_number(scale = 1e-4)) +
+  stat_smooth(method = "lm", formulat = y~x) +
+  labs(x = "FSC.H", y = "normalized BL3")
+plot_grid(as.ggplot(p1), as.ggplot(p2), nrow = 2)
+```
+
+# Gatting strategies {.tabset}
+## Load all gates from specification file
+```{r}
+source("../script/20250206-FGL-flow-gate-specification.R")
+```
+
+## Gating for singlets
+>The following gaphing steps are used to gate singlets by FSC and SSC values. Only singlets are included in analysis.
+>Gate for outlier 
+
+```{r}
+#outlier.gate <- rectangleGate(filterId = "-outlier", "FSC.H" = c(1.2e5, 1e6), "SSC.H" = c(1e2, 1e6))
+ggcyto(ndat[1], aes(x = FSC.H, y = SSC.H), subset = "root") +
+  geom_hex(bins = 64) + geom_gate(outlier.gate) + facet_wrap(~name, ncol = 2) + ggcyto_par_set(limits = "instrument")
+```
+Add gate to GS
+```{r}
+gs <- GatingSet(ndat) # create a GatingSet
+# rename the samples
+sampleNames(gs) <- pData(gs)$name
+# repair the Date column in pData
+pData(gs)$Date = paste0("0", pData(gs)$Date)
+# add the outlier gate
+gs_pop_add(gs, outlier.gate, parent = "root")
+recompute(gs)
+```
+
+> Gate for singlets
+
+```{r fig.width=4, fig.height=4}
+scPars <- ggcyto_par_set(limits = list(x = c(0,1e6), y = c(30,300)))
+ex <- Subset(ndat[[1]], outlier.gate)
+#polygon <- matrix(c(1e5, 1e5, 1e6, 1e6, 
+#                    60, 105, 135,60), ncol = 2)
+#colnames(polygon) <- c("FSC.H", "FSC.W")
+#singlet.gate <- polygonGate(filterId = "singlet", .gate = polygon)
+ggcyto(ex, aes(x = FSC.H, y = FSC.W)) + geom_hex(bins = 128) + geom_gate(singlet.gate) + geom_stats() + scPars
+```
+
+
+Add this gate to the gatingSet
+```{r}
+gs_pop_add(gs, singlet.gate, parent = "-outlier", name = "singlet")
+recompute(gs)
+```
+
+## Gate for live cells
+This is the live population with red fluorescence below 10^2.2
+
+> **Main takeaway**
+>
+> 1. From 10mM to 1M treated samples, %live decreases and the change is much more obvious in the dual stain (PI first or simultaneous) than PI alone
+>
+> 2. The mock treated sample has a visible high red high green (not as high and prominent as the 100 mM treated) than 10 mM treated. It doesn't follow the trend above.
+
+```{r}
+scPars <- ggcyto_par_set(limits = list(x = c(0,10^5.5), y = c(0,10^5.5)))
+#polygon <- matrix(c(0, 5*10^3, 5*10^3, 0, # BL1.H, green
+#                    10^2.2, 10^2.2, 0, 0),# BL3.H, red
+#                  ncol = 2)
+#colnames(polygon) <- c("BL1.H", "BL3.H")
+#live.gate <- polygonGate(filterId = "live", .gate = polygon)
+p.axis <- list(
+  scale_x_logicle(breaks = 10^c(2,3,4,5)),
+  scale_y_logicle(breaks = 10^c(2,3,4,5)),
+  theme(
+    strip.text = element_text(size = rel(1.1), face = 2)
+  )
+)
+for(date in c("021424", "021624", "021724")){
+  p <- ggcyto(gs[pData(gs)$Date == date], aes(x = BL1.H, y = BL3.H), subset = "singlet") + 
+    geom_hex(bins = 128) + 
+    geom_gate(live.gate) + 
+    geom_stats(location = "data", adjust = c(0.005, 5), digits = 1) + 
+    labs(title = paste0("Date: ", date)) +
+    facet_grid(Dye ~ Treatment) +# scPars +
+    p.axis
+  print(p)
+}
+```
+
+Add this gate to the gatingSet
+
+```{r}
+gs_pop_add(gs, live.gate, parent = "singlet", name = "live")
+recompute(gs)
+```
+## Gate for the intermediate population with high SYTO9
+This is the intermediate population with high Red and Green. We hypothesize that they represent oxidatively damaged cells with partially compromised plasma membranes, resulting in more SYTO9 accumulation but not a significant increase in PI.
+
+> <span style="color:red">Important: I changed the bottom boundary from 10^2.2 to 10^2.3, and the left boundary from 10^3 to 2*10^3</span>
+
+> **Main takeaway**
+>
+> 1. Different from the %live gate, the intermediate population is most obvious in the 
+> 100 mM treated sample, and absent in both the 10 mM and 1M treated ones. This suggests
+> that this population could be useful for distinguishing stress levels below the lethal concentration
+> but above the tolerance levels of the species - in this case, < 1M and > 10 mM.
+>
+> 2. The mock treated sample showed an intermediate population. Was unexpected.
+
+```{r}
+#polygon <- matrix(c(10^5, 1*10^3, 10^5,
+#                    10^2.2, 10^2.2, 10^4), ncol = 2)
+#polygon <- matrix(c(10^3, 10^5.5, 10^5.5,   # BL1.H, green
+#                    10^2.2, 10^2.2, 10^4.5),# BL3.H, red
+#                  ncol = 2)
+#colnames(polygon) <- c("BL1.H", "BL3.H")
+#inter.gate <- polygonGate(filterId = "inter", .gate = polygon)
+for(date in c("021424", "021624", "021724")){
+  p <- ggcyto(gs[pData(gs)$Date == date], aes(x = BL1.H, y = BL3.H),
+              subset = "singlet") + 
+    geom_hex(bins = 128) + 
+    geom_gate(inter.gate) + 
+    geom_stats(location = "data",  adjust = c(0.05, 5), digits = 3) + 
+    labs(title = paste0("Date: ", date)) +
+    facet_grid(Dye ~ Treatment) + scPars + 
+    p.axis
+  print(p)
+}
+```
+
+```{r}
+gs_pop_add(gs, inter.gate, parent = "singlet", name = "intermediate")
+recompute(gs)
+```
+
+# Extract gated stats and MFI
+
+% of events in each of the three gates
+```{r}
+# we are only interested in the populations after singlet gating
+nodes <- c("singlet", "intermediate", "live")
+# get the event count
+gated_cnt <- gs_pop_get_stats(gs, nodes, type = "count")
+# get the MFI for each parameter in each population of interest
+gated_mfi <- gs_pop_get_stats(gs, nodes, type = pop.MFI) %>% 
+  select(sample, pop, starts_with("FungaLight"))
+```
+
+Combine the data and meta data
+```{r}
+gated_stats <- full_join(gated_cnt, gated_mfi, by = c("sample", "pop")) %>% 
+  right_join(pData(gs), by = c("sample" = "name")) %>% 
+  relocate(Date, Treatment, Dye, .after = sample) %>% 
+  relocate(sample, .after = last_col())
+write_tsv(gated_stats, file =
+            "../output/20250410-log-h2o2-Cg-gated-stats-cell-size-normalized.tsv")
+
+# we don't need the MFI for the latter analysis. add meta data to gated_cnt
+gated_freq <- left_join(sample, gated_cnt, by = c("name" = "sample")) %>% 
+  select(-name) %>% 
+  group_by(Date, Treatment, Dye) %>% 
+  mutate(perc = count / count[pop == "singlet"], .after = count)
+```
+
+# Compare with CFU
+## Read CFU data 
+These are averaged CFU provided by Hanxi. The raw counts data will be provided by her separately.
+```{r}
+cfu <- read_tsv("../input/20240219-log-h2o2-Cg-CFU-HT.tsv") %>% 
+  mutate(Method = "CFU", .after = Treatment) %>% 
+  mutate(Treatment = fct_recode(Treatment, `0` = "mock")) %>%
+  rename(p_live = CFU)
+```
+
+Here are the raw cfu data
+```{r}
+cfu_raw <- read_tsv("../input/20240214-0405-h2o2-Cg-CFU-raw.tsv",
+                    col_types = "cccccciiii", comment = "#")
+cfu_calc <- cfu_raw %>% 
+  select(Date, Treatment = H2O2_mM, Group, Dilution, Raw_count = Total) %>% 
+  mutate(Date = ymd(Date),
+         Treatment = fct_inseq(Treatment),
+         CFU = Dilution * Raw_count) %>% 
+  # group by Date to calculate the ratio of MO to MM
+  group_by(Date) %>% 
+  mutate(p_live = CFU / CFU[Group == "MM"]) %>% 
+  # we only need the log dilution series
+  dplyr::filter(Date < ymd("20240301"))
+
+# export the data for paper
+#write_tsv(cfu_calc, file = "../output/20250226-log-h2o2-cfu-estimate.tsv")
+```
+
+## Calculate survival from PI alone or FungaLight
+
+For both PI alone and FungaLight, we will calculate the percent live events. For FungaLight specifically, we will also record the percent intermediate events and will investigate its utility
+```{r}
+dye_based <- gated_freq %>% 
+  # record the total number of events as the count of singlets
+  group_by(Date, Treatment, Dye) %>% 
+  mutate(total_event_count = count[pop == "singlet"]) %>% 
+  # now we don't need the singlet population and the count variable
+  select(-count) %>% 
+  dplyr::filter(pop != "singlet") %>%
+  #ungroup() %>% 
+  # we will pivot this data frame to a wider format, making 
+  # two new variables out of the percentage variable
+  pivot_wider(names_from = pop, values_from = perc, names_prefix = "p_") %>% 
+  mutate(p_dead = 1 - p_live - p_intermediate) %>% 
+  relocate(p_live, .after = total_event_count)
+
+# export the data for paper
+write_tsv(dye_based, file =
+            "../output/20250410-log-h2o2-fgl-cell-size-normalized-estimate.tsv")
+```
+
+Combine the dye based results with cfu
+```{r}
+cfu_dye <- bind_rows(cfu,
+  select(dye_based, Date, Treatment, Method = Dye, starts_with("p"))) %>% 
+  mutate(
+    Method = factor(Method, levels = c("CFU", "PI", "Both"),
+                    labels = c("CFU", "PI", "FungaLight")),
+    Treatment = fct_inorder(Treatment)
+  )
+```
+
+## Plotting the results
+Compare the three methods
+```{r}
+h2o2.levels <- c("0" = "0", "10" = "10", "100" = "100", "1000" = "1K")
+p <- cfu_dye %>% 
+  dplyr::filter(Treatment != "5C") %>% 
+  ggplot(aes(x = Treatment, y = p_live, group = Method)) +
+  geom_bar(stat = "summary", fun = "mean", fill = "gray70", width = 0.7) +
+  geom_point(aes(shape = Date), position = position_jitter(0.2),
+             size = 1.5) + 
+  scale_shape_manual(values = 4:6, guide = "none") +
+  scale_y_continuous(labels = scales::percent, 
+                     limits = c(NA, 1.1), breaks = seq(0,1,0.5)) +
+  scale_x_discrete(labels = h2o2.levels) +
+  #coord_flip() + 
+  labs(x = bquote(H[2]*O[2]~(mM)), y = "% Live") +
+  facet_wrap(~Method, nrow = 1) +
+  theme(strip.background = element_blank(),
+        strip.text = element_text(size = rel(0.9), face = 1),
+        axis.text.x = element_text(size = rel(0.9), angle = 90, vjust = .5),
+        axis.text.y = element_text(size = rel(0.9)),
+        axis.title = element_text(size = rel(0.9)),
+        panel.spacing = unit(1, "lines"))
+p
+#ggsave("../output/20250116-perc-live-compare-three-methods.png",
+#       width = 4, height = 2.5)
+```
+# Compare with non-normalized FGL estimates
+Let's read in the previous unnormalized estimates
+```{r}
+dye_based_orig <- read_tsv("../output/20250226-log-h2o2-fgl-estimate.tsv")
+dye_based_combine <- bind_rows(
+  Normalized = dye_based,
+  Non_normalized = dye_based_orig,
+  .id = "Cell_size"
+) %>% dplyr::filter(Treatment != "5C", Dye == "Both")
+```
+
+Compare the results
+```{r}
+dye_based_combine %>% 
+  group_by(Cell_size, Treatment) %>% 
+  summarize(across(c(p_live, p_intermediate), 
+                   list(mean = mean, sd = sd)))
+```
+
+```{r}
+pd <- position_jitterdodge(dodge.width = 0.9, jitter.width = 0.1)
+p <- dye_based_combine %>% 
+  dplyr::filter(Treatment != "5C", Dye == "Both") %>% 
+  ggplot(aes(x = Treatment, y = p_live, group = Cell_size)) +
+  #stat_summary(fun.data = "mean_sdl", fun.args = list(mult = 1), position = pd) +
+  geom_point(aes(shape = Date, color = Cell_size), position = pd, size = 2) + 
+  scale_shape_manual(values = 4:6, guide = "none") +
+  scale_color_manual("Cell size", values = c("gray20", "orange")) +
+  scale_y_continuous(labels = scales::percent, 
+                     limits = c(NA, 1.1), breaks = seq(0,1,0.5)) +
+  scale_x_discrete(labels = h2o2.levels) +
+  #coord_flip() + 
+  labs(x = bquote(H[2]*O[2]~(mM)), y = "% Live") +
+  #facet_wrap(~Method, nrow = 1) +
+  theme(legend.title = element_text(size = rel(0.8)),
+        legend.text = element_text(size = rel(0.7)))
+p
+ggsave("../output/20250410-perc-live-compare-cell-normalized-or-not.png",
+       width = 5, height = 2.5)
+```
+
+
+## Statistical tests
+For p_live with FungaLight before normalization
+```{r}
+tmp <- dye_based_orig |>
+  dplyr::filter(Treatment != "5C", Dye == "Both")
+
+test <- aov(p_live ~ Treatment, data = tmp)
+TukeyHSD(test)
+```
+
+For p_live with FungaLight after normalization
+```{r}
+tmp <- dye_based |>
+  dplyr::filter(Treatment != "5C", Dye == "Both")
+
+test <- aov(p_live ~ Treatment, data = tmp)
+TukeyHSD(test)
+```
