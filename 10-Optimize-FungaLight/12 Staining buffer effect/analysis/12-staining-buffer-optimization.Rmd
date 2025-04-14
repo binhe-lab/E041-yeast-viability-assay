@@ -15,7 +15,7 @@ require(flowClust)
 require(openCyto)
 require(ggcyto)
 require(cowplot)
-require(ggrdiges)
+require(ggridges)
 ```
 
 ```{r}
@@ -35,12 +35,12 @@ This is the flow cytometry data for mig-log phase _C. glabrata_ cells stained wi
 
 ```{r}
 # use relative path to make it easier for collaboration
-data.path = "../../../00-Shared/02-data/02.01-flow-cytometry/20240108-extended-buffer-optimization/"
+data.path = "../input/20240108-extended-buffer-optimization/"
 dat0 <- read.flowSet(path = data.path,
-                        transformation = FALSE,        # the original values are already linearized. 
-                        emptyValue = FALSE,
-                        alter.names = TRUE,            # change parameter names to R format
-                        column.pattern = ".H|FSC|SSC") # only load the height variables for the fluorescent parameters
+                     transformation = FALSE,        # the original values are already linearized. 
+                     emptyValue = FALSE,
+                     alter.names = TRUE,            # change parameter names to R format
+                     column.pattern = ".H|FSC|SSC") # only load the height variables for the fluorescent parameters
 ```
 
 Simplify the sample names
@@ -128,8 +128,8 @@ recompute(gs)
 #scPars <- ggcyto_par_set(limits = list(x = c(0,1e6), y = c(0,1e6)))
 select <- c(7,19)
 ex <- Subset(dat[select], singlet.gate)
-polygon2 <- matrix(c(0, 1e2, 1e2, 0,
-                    0, 0, 1e2, 1e2), ncol = 2)
+polygon2 <- matrix(c(0, 10^2, 10^2, 0,
+                    0, 0, 10^2.1, 10^2.1), ncol = 2)
 colnames(polygon2) <- c("BL1.H", "BL3.H")
 unstained.gate <- polygonGate(filterId = "unstained", .gate = polygon2)
 ggcyto(ex, aes(x = BL1.H, y = BL3.H)) +
@@ -152,10 +152,10 @@ recompute(gs)
 #scPars <- ggcyto_par_set(limits = list(x = c(0,1e6), y = c(0,1e6)))
 select <- c(19,22)
 ex <- Subset(dat[select], singlet.gate)
-#polygon <- matrix(c(10^3, 10^2.5,10^3, 10^5,
-#                    10^4.5, 10^2.2, 10^2.2, 10^4), ncol = 2)
-polygon <- matrix(c(10^2, 10^3, 10^4.5, 10^2.5,
-                    10^2.3, 10^2.3, 10^4, 10^4), ncol = 2)
+polygon <- matrix(c(10^1, 10^3, 10^4.5, 10^1,
+                    10^2.1, 10^2.1, 10^4.2, 10^4.2), ncol = 2)
+#polygon <- matrix(c(10^2, 10^3, 10^4.5, 10^2.5,
+#                    10^2.3, 10^2.3, 10^4, 10^4), ncol = 2)
 colnames(polygon) <- c("BL1.H", "BL3.H")
 dead.gate <- polygonGate(filterId = "dead_like", .gate = polygon)
 ggcyto(ex, aes(x = BL1.H, y = BL3.H)) +
@@ -179,13 +179,14 @@ With gates
 subset.to.plot <- with(pData(gs), dye == "Both" & date == '2024-01-09')
 p <- ggcyto(gs[subset.to.plot],
             aes(x = BL1.H, y = BL3.H), subset = "singlet") + 
-  geom_hex(aes(fill = after_stat(density)), bins = 64) + 
+  #geom_hex(aes(fill = after_stat(density)), bins = 64) + 
+  geom_hex(bins = 64) + 
   geom_gate("dead_like", linewidth = 0.5, alpha = 0.5) +
-  geom_stats(type = "percent", location = "gate", adjust = c(0, 1),
-             digits = 1, size = 3) +
-  geom_gate("unstained", linewidth = 0.5, alpha = 0.5) +
-  geom_stats(type = "percent", location = "data", adjust = c(0.2, 0.003),
-             digits = 1, size = 3) +
+  #geom_stats(type = "percent", location = "gate", adjust = c(0.02, 1),
+  #           digits = 1, size = 3) +
+  geom_gate("unstained", linewidth = 0.5, alpha = 0.5, colour = "gray20") +
+  #geom_stats(type = "percent", location = "data", adjust = c(0.2, 0.003),
+  #           digits = 1, size = 3) +
   facet_grid(buffer ~ treatment,
              labeller = as_labeller(c(tr.levels, bu.levels), multi_line = F)) +
   scale_x_logicle(breaks = c(10^2, 10^3, 10^4)) + 
@@ -228,9 +229,6 @@ p <- ggcyto(gs[subset.to.plot],
 print(p)
 ggsave("../output/fig2-compare-staining-buffers-no-gate-20240923.png", width = 5, height = 5)
 ```
-```{r}
-
-```
 ## Export gated event counts
 
 ```{r}
@@ -238,8 +236,8 @@ tmp <- gs_pop_get_stats(gs) %>%
   mutate(pop = gsub(".*/", "", pop), pop = gsub("-outlier", "cells", pop)) %>% 
   pivot_wider(names_from = pop, names_prefix = "n_", values_from = count) %>% 
   mutate(
-    pc_dead_like = num(n_dead_like / n_singlet, label = "%", scale = 100),
-    pc_unstained = num(n_unstained / n_singlet, label = "%", scale = 100)
+    p_dead_like = n_dead_like / n_singlet,
+    p_unstained = n_unstained / n_singlet
   )
 
 gated_stats <- left_join(
@@ -259,7 +257,7 @@ p1 <- gated_stats %>%
   # plot the mock sample only
   dplyr::filter(treatment == "0") %>% 
   pivot_longer(
-    cols = starts_with("pc_"),
+    cols = starts_with("p_"),
     names_to = "var",
     values_to = "value"
   ) %>% 
@@ -269,16 +267,35 @@ p1 <- gated_stats %>%
   scale_y_continuous(labels = scales::percent_format()) +
   scale_x_discrete(labels = bu.levels) +
   facet_wrap(~var, nrow = 2, scales = "free_y", labeller = as_labeller(
-    c("pc_dead_like" = "% Dead-like", "pc_unstained" = "% Unstained"))) +
+    c("p_dead_like" = "% Dead-like", "p_unstained" = "% Unstained"))) +
   labs(x = NULL, y = "Population frequency") +
   theme_minimal(base_size = 18) + panel_border(color = "gray20") +
   theme(axis.text.x = element_text(angle = 45, hjust = 1),
         strip.text = element_text(color = "steelblue", face = 2))
 print(p1 + facet_wrap(~var, ncol = 2, scales = "free_y", labeller = as_labeller(
-    c("pc_dead_like" = "% Dead-like", "pc_unstained" = "% Unstained"))))
+    c("p_dead_like" = "% Dead-like", "p_unstained" = "% Unstained"))))
 ggsave(filename = "../output/fig2bc-compare-buffer-plot-stats.png", 
        plot = p1, width = 4, height = 7)
 ```
+## Statistical test
+We perform pairwise comparisons for both %dead like and %unstained
+
+Use Tukey HSD test to compare all pairs of conditionsn for %dead-like
+```{r}
+tmp <- gated_stats |>
+  dplyr::filter(treatment == "0")
+test <- aov(p_dead_like ~ buffer, data = tmp)
+TukeyHSD(test)
+```
+
+Use Tukey HSD test to compare all pairs of conditionsn for % unstained
+```{r}
+tmp <- gated_stats |>
+  dplyr::filter(treatment == "0")
+test <- aov(p_unstained ~ buffer, data = tmp)
+TukeyHSD(test)
+```
+
 ## Sample-to-sample variation
 Visaulize sample-to-sample variability in mock-treated cells across three replicates
 ```{r}
