@@ -14,11 +14,11 @@ This folder contains analyses for showing the initial staining patterns we obser
 
 
 ```{r setup, message=FALSE}
-require(tidyverse)
 require(flowCore)
 require(flowClust)
 require(openCyto)
 require(ggcyto)
+require(tidyverse)
 require(cowplot)
 require(ggridges)
 ```
@@ -33,7 +33,7 @@ old <- theme_set(theme_minimal())
 
 ```{r}
 # use relative path to make it easier for collaboration
-data.path = "/Volumes/rdss_bhe2/User/Hanxi-Tang/flow_cytometry/20230929 FungaLight-Cgla-analysis/"
+data.path = "../input/20230929 FungaLight-Cgla-analysis/"
 dat0 <- read.flowSet(path = data.path, transformation = FALSE,  # the original values are already linearized. 
                      emptyValue = FALSE,  alter.names = TRUE,   # change parameter names to R format
                      column.pattern = ".H|FSC|SSC") # only load the height variables for the fluorescent parameters
@@ -149,18 +149,20 @@ mult_format <- function() {
      function(x) format(x/10000,digits = 2) 
 }
 #for(date in unique(sample$date)){
-  p <- ggcyto(gs, aes(x = FSC.H), subset = "singlet") + 
-    geom_density_ridges(aes(y = factor(treatment, levels = tr.levels)), 
-                            fill = "forestgreen", alpha = 0.8) + 
-    scale_x_continuous(labels = mult_format(), name = "FSC.H x 10000") +
-    facet_wrap(~date + replicate, 
-               labeller = labeller(.multi_line = FALSE)) + 
-    ylab("H2O2 concentration")
-  print(p)
+p <- ggcyto(gs, aes(x = FSC.H), subset = "singlet") + 
+  geom_density_ridges(aes(y = factor(treatment, levels = tr.levels)), 
+                      fill = "forestgreen", alpha = 0.8) + 
+  scale_x_continuous(labels = mult_format(), name = "FSC.H x 10000") +
+  facet_wrap(~date + replicate, 
+             labeller = labeller(.multi_line = FALSE)) + 
+  ylab("H2O2 concentration")
+print(p)
 #}
+ggsave("../output/20250414-h2o2-treatment-alter-FSC.png", width = 4, height = 4)
 ```
 
-> there is a trend of decreasing FSC with stronger H2O2 treatment
+> interestingly, low doses of H2O2 (2-8 mM) appears to cause cell expansion,
+> while >10 mM H2O2 treatment causes cell shrinkage
 
 ### SSC
 
@@ -174,6 +176,7 @@ mult_format <- function() {
     ylab("H2O2 concentration")
   print(p)
 
+ggsave("../output/20250414-h2o2-treatment-alter-SSC.png", width = 4, height = 4)
 ```
 > SSC (complexity of cell, roughly) decreases with increasing H2O2 concentration
 
@@ -189,6 +192,8 @@ mult_format <- function() {
     ylab("H2O2 concentration")
   print(p)
 #}
+ggsave("../output/20250414-h2o2-treatment-FGL-green-evolution.png", 
+       width = 4, height = 4)
 ```
 
 
@@ -204,6 +209,8 @@ mult_format <- function() {
     ylab("H2O2 concentration")
   print(p)
 #}
+ggsave("../output/20250414-h2o2-treatment-FGL-red-evolution.png", 
+       width = 4, height = 4)
 ```
 
 # Plotting initial phenotype
