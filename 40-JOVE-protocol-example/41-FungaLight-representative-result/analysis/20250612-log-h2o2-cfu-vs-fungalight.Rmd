@@ -1,0 +1,308 @@
+---
+title: "Example analysis script for SYTO 9/PI stained yeast treated with H2O2"
+author: Hanxi Tang, Bin He
+date: "2025-06-12 (updated `r Sys.time()`)"
+output:
+  html_notebook:
+    toc: true
+    toc_depth: 4
+    code_folding: hide
+---
+
+```{r setup, message=FALSE}
+require(tidyverse)
+require(flowCore)
+#require(flowClust)
+require(openCyto)
+require(ggcyto)
+require(cowplot)
+#require(ggrdiges)
+```
+
+```{r}
+old <- theme_set(theme_minimal(base_size = 14) + panel_border(color = "gray20"))
+```
+
+# Background & Goal
+This is an example analysis script for the flow cytometry data of _Candida glabrata_ treated with hydrogen peroxide (H2O2) and stained with SYTO 9 and propidium iodide (PI). The goal is to demonstrate how to gate the flow cytometry data, extract statistics, and compare the results with colony-forming unit (CFU) counts. This script serves as a template for readers of our JOVE paper.
+
+# Import data
+The experiments for _C. glabrata_ were conducted on 2024.02.14-17. Post-treatment cells were stained with PI or PI+SYTO9, and run through flow cytometry. The same sample was also plated for CFU.
+
+_note_: samples are labeled by the H2O2 doses they were treated with. an exception is "5C", which refers to samples taken prior to the treatment and stored in the fridge at 5 Celsius until treated samples are ready for flow cytometer. this was done as a control experiment. ask Hanxi about the specific rationale. 
+
+```{r}
+# use relative path to make it easier for collaboration
+data.path = "../input/20240214-17 Log range correlation/"
+dat0 <- read.flowSet(path = data.path, pattern = "*.fcs",
+                     transformation = FALSE,  # the original values are already linearized. 
+                     emptyValue = FALSE,  alter.names = TRUE,   # change parameter names to R format
+                     column.pattern = ".H|FSC|SSC") # only load the height variables for the fluorescent parameters
+```
+
+Simplify the sample names
+
+```{r}
+oriNames <- sampleNames(dat0)
+tmp <- str_split(oriNames, pattern = "[ _]+", simplify = TRUE)[,c(1, 6, 7)]
+colnames(tmp) <- c("Date", "Treatment", "Dye")
+#treatment.levels <- c("mock", "5C", "10", "100", "1000")
+sample <- data.frame(tmp) %>% 
+  mutate(
+    Dye = ifelse(Dye == "p.fcs", "PI", ifelse(Dye == "b.fcs", "Both", Dye)), 
+    Treatment = fct_inorder(Treatment),
+    name = paste(Date, paste0(Treatment, 
+                              ifelse(Treatment == "5C", "", "mM")), 
+                 Dye, sep = "_")
+  )
+rownames(sample) <- oriNames
+dat <- dat0 # make a copy
+pData(dat) <- sample
+write_tsv(pData(dat), file = "../input/20240214-log-h2o2-cg-sample.tsv")
+```
+
+
+# Gatting strategies {.tabset}
+Load all gates from specification file
+```{r}
+source("../script/20250612-FGL-flow-gate-specification.R")
+```
+
+## Gating for singlets
+>Gate for cell events and remove non-cell particles with a rectangular gate
+
+```{r}
+ggcyto(dat[1], aes(x = FSC.H, y = SSC.H), subset = "root") +
+  geom_hex(bins = 64) + geom_gate(outlier.gate) + facet_wrap(~name, ncol = 2) + ggcyto_par_set(limits = "instrument")
+```
+Add gate to GS
+```{r}
+gs <- GatingSet(dat) # create a GatingSet
+# rename the samples
+sampleNames(gs) <- pData(gs)$name
+# repair the Date column in pData
+pData(gs)$Date = paste0("0", pData(gs)$Date)
+# add the outlier gate
+gs_pop_add(gs, outlier.gate, parent = "root")
+recompute(gs)
+```
+
+> Gate for singlets
+
+```{r fig.width=4, fig.height=4}
+scPars <- ggcyto_par_set(limits = list(x = c(0,1e6), y = c(30,300)))
+ex <- Subset(dat[[1]], outlier.gate)
+ggcyto(ex, aes(x = FSC.H, y = FSC.W)) + geom_hex(bins = 128) + geom_gate(singlet.gate) + geom_stats() + scPars
+```
+
+
+Add this gate to the gatingSet
+```{r}
+gs_pop_add(gs, singlet.gate, parent = "-outlier", name = "singlet")
+recompute(gs)
+```
+
+## Gate for live cells
+>Gate for live cells with red fluorescence below 10^2.2
+
+```{r}
+scPars <- ggcyto_par_set(limits = list(x = c(0,10^5.5), y = c(0,10^5.5)))
+#polygon <- matrix(c(0, 5*10^3, 5*10^3, 0, # BL1.H, green
+#                    10^2.2, 10^2.2, 0, 0),# BL3.H, red
+#                  ncol = 2)
+#colnames(polygon) <- c("BL1.H", "BL3.H")
+#live.gate <- polygonGate(filterId = "live", .gate = polygon)
+p.axis <- list(
+  scale_x_logicle(breaks = 10^c(2,3,4,5)),
+  scale_y_logicle(breaks = 10^c(2,3,4,5)),
+  theme(
+    strip.text = element_text(size = rel(1.1), face = 2)
+  )
+)
+for(date in c("021424", "021624", "021724")){
+  p <- ggcyto(gs[pData(gs)$Date == date], aes(x = BL1.H, y = BL3.H), subset = "singlet") + 
+    geom_hex(bins = 128) + 
+    geom_gate(live.gate) + 
+    geom_stats(location = "data", adjust = c(0.005, 5), digits = 1) + 
+    labs(title = paste0("Date: ", date)) +
+    facet_grid(Dye ~ Treatment) +# scPars +
+    p.axis
+  print(p)
+}
+```
+
+Add this gate to the gatingSet
+
+```{r}
+gs_pop_add(gs, live.gate, parent = "singlet", name = "live")
+recompute(gs)
+```
+## Gate for the intermediate population with high SYTO9
+>Gate for the "intermediate", oxidatively-damaged cell population with high Red and Green fluorescence.
+>We hypothesize that they represent oxidatively damaged cells with partially compromised plasma membranes, resulting in more SYTO9 accumulation but not a significant increase in PI.
+
+```{r}
+for(date in c("021424", "021624", "021724")){
+  p <- ggcyto(gs[pData(gs)$Date == date], aes(x = BL1.H, y = BL3.H),
+              subset = "singlet") + 
+    geom_hex(bins = 128) + 
+    geom_gate(inter.gate) + 
+    geom_stats(location = "data",  adjust = c(0.05, 5), digits = 3) + 
+    labs(title = paste0("Date: ", date)) +
+    facet_grid(Dye ~ Treatment) + scPars + 
+    p.axis
+  print(p)
+}
+```
+
+```{r}
+gs_pop_add(gs, inter.gate, parent = "singlet", name = "intermediate")
+recompute(gs)
+```
+
+# Extract gated stats and MFI
+
+% of events in each of the three gates
+```{r}
+# we are only interested in the populations after singlet gating
+nodes <- c("singlet", "intermediate", "live")
+# get the event count
+gated_cnt <- gs_pop_get_stats(gs, nodes, type = "count")
+# get the MFI for each parameter in each population of interest
+gated_mfi <- gs_pop_get_stats(gs, nodes, type = pop.MFI) %>% 
+  select(sample, pop, starts_with("FungaLight"))
+```
+
+Combine the data and meta data
+```{r}
+gated_stats <- full_join(gated_cnt, gated_mfi, by = c("sample", "pop")) %>% 
+  right_join(pData(gs), by = c("sample" = "name")) %>% 
+  relocate(Date, Treatment, Dye, .after = sample) %>% 
+  relocate(sample, .after = last_col())
+write_tsv(gated_stats, file = "../output/20240214-17-log-h2o2-Cg-gated-stats.tsv")
+
+# we don't need the MFI for the latter analysis. add meta data to gated_cnt
+gated_freq <- left_join(sample, gated_cnt, by = c("name" = "sample")) %>% 
+  select(-name) %>% 
+  group_by(Date, Treatment, Dye) %>% 
+  mutate(perc = count / count[pop == "singlet"], .after = count)
+```
+
+# Compare with CFU
+Read in the raw CFU data
+```{r}
+cfu_raw <- read_tsv("../input/20240214-17-h2o2-Cg-CFU-raw.tsv",
+                    col_types = "cccccciiii", comment = "#")
+cfu_calc <- cfu_raw %>% 
+  select(Date, Treatment = H2O2_mM, Group, Dilution, Raw_count = Total) %>% 
+  mutate(Date = ymd(Date),
+         Treatment = fct_inseq(Treatment),
+         CFU = Dilution * Raw_count) %>% 
+  # group by Date to calculate the ratio of MO to MM
+  group_by(Date) %>% 
+  mutate(p_live = CFU / CFU[Group == "MM"], Method = "CFU") %>% 
+  select(-Group) %>% 
+  # we only need the log dilution series
+  dplyr::filter(Date < ymd("20240301"))
+
+# export the data for paper
+write_tsv(cfu_calc, file = "../output/20250612-log-h2o2-cfu-estimate.tsv")
+```
+
+## Calculate survival from PI alone or FungaLight
+
+We will calculate the percent live events and the percent intermediate events.
+
+```{r}
+dye_based <- gated_freq %>% 
+  # record the total number of events as the count of singlets
+  group_by(Date, Treatment, Dye) %>% 
+  mutate(total_event_count = count[pop == "singlet"]) %>% 
+  # now we don't need the singlet population and the count variable
+  select(-count) %>% 
+  dplyr::filter(pop != "singlet") %>%
+  # we will pivot this data frame to a wider format, making 
+  # two new variables out of the percentage variable
+  pivot_wider(names_from = pop, values_from = perc, names_prefix = "p_") %>% 
+  mutate(p_dead = 1 - p_live - p_intermediate,
+         Date = mdy(Date), Method = "SYTO 9/PI") %>% 
+  ungroup() %>% 
+  select(Date, Treatment, Method, total_event_count, 
+         p_live, p_intermediate, p_dead)
+
+# export the data for paper
+write_tsv(dye_based, file = "../output/20250612-log-h2o2-dye-estimate.tsv")
+```
+
+Combine the dye based results with CFU
+```{r}
+cfu_dye <- bind_rows(
+  select(cfu_calc, Date, Treatment, Method, p_live),
+  select(dye_based, Date, Treatment, Method, starts_with("p"))) %>% 
+  mutate(
+    Method = factor(Method, levels = c("CFU", "SYTO 9/PI")),
+    Treatment = fct_inorder(Treatment)
+  )
+  
+```
+
+## Plotting the results
+Compare the three methods
+```{r}
+h2o2.levels <- c("0" = "0", "100" = "100", "1000" = "1K")
+p <- cfu_dye %>% 
+  select(Date, Treatment, Method, p_live, p_intermediate) %>% 
+  pivot_longer(cols = c(p_live, p_intermediate), 
+               names_to = "par", values_to = "perc") %>% 
+  mutate(par = factor(par, levels = c("p_live", "p_intermediate"),
+                      labels = c("% live", "% intermediate"))) %>% 
+  ggplot(aes(x = Treatment, y = perc, group = par)) +
+  geom_bar(aes(fill = par), position = position_dodge(.9),
+    stat = "summary", fun = "mean", width = 0.8) +
+  geom_point(aes(shape = as.character(Date), color = par), 
+             position = position_jitterdodge(jitter.width = 0.1,
+                                             dodge.width = 0.9),
+             size = 1.5, stroke = 1.2) + 
+  scale_fill_manual(NULL, values = c("gray70", "lightblue3")) +
+  scale_color_manual(NULL, values = c("black", "steelblue")) +
+  #ggplot(aes(x = Treatment, y = p_live, group = Method)) +
+  #geom_bar(stat = "summary", fun = "mean", fill = "gray70", width = 0.7) +
+  #geom_point(aes(shape = as.character(Date)), position = position_jitter(0.2),
+  #           size = 1.5) + 
+  scale_shape_manual(values = 4:6, guide = "none") +
+  scale_y_continuous(labels = scales::percent, 
+                     limits = c(NA, 1.1), breaks = seq(0,1,0.5)) +
+  scale_x_discrete(labels = h2o2.levels) +
+  #coord_flip() + 
+  labs(x = bquote(H[2]*O[2]~(mM)), y = "% Live") +
+  facet_wrap(~Method, nrow = 1) +
+  theme(strip.background = element_blank(),
+        strip.text = element_text(size = rel(0.9), face = 1),
+        axis.text.x = element_text(size = rel(0.9), angle = 90, vjust = .5),
+        axis.text.y = element_text(size = rel(0.9)),
+        axis.title = element_text(size = rel(0.9)),
+        legend.position = "top",
+        panel.spacing = unit(1, "lines"))
+p
+ggsave("../output/20250613-perc-live-compare-dye-to-cfu.png",
+       width = 5, height = 4)
+```
+
+## Statistical tests
+CFU
+```{r}
+tmp <- aov(p_live ~ Treatment, data = cfu_calc)
+TukeyHSD(tmp)
+```
+
+For p_live with SYTO 9/PI
+```{r}
+tmp <- aov(p_live ~ Treatment, data = dye_based)
+TukeyHSD(tmp)
+```
+
+For p_intermediate with SYTO 9/PI
+```{r}
+tmp <- aov(p_intermediate ~ Treatment, data = dye_based)
+TukeyHSD(tmp)
+```

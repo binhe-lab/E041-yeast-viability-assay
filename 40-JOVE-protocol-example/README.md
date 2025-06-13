@@ -1,0 +1,1 @@
+This folder contains example data and analysis scripts for hydrogen peroxide-treated _C. glabrata_ cells stained with SYTO 9/PI and assayed with flow cytometry. The resources here accompany our Journal of Visual Experiment (JOVE) protocol publication.

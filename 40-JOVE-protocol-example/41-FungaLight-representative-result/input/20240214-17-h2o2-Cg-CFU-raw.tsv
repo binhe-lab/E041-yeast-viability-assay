@@ -1,0 +1,14 @@
+# Group: MO = oxidatively stressed; MM = mock treated
+# Dilution: fold dilution
+# Total: total number of colonies
+# Large/Small: number of large and small colonies, should add up to Total
+Date	Strain	Species	Genotype	H2O2_mM	Group	Dilution	Total	Large	Small
+20240214	yH181	Cg	wt	0	MM	1000	83	83	0
+20240214	yH181	Cg	wt	100	MO	1000	5	5	0
+20240214	yH181	Cg	wt	1000	MO	1000	0	0	0
+20240216	yH181	Cg	wt	0	MM	1000	84	84	0
+20240216	yH181	Cg	wt	100	MO	1000	6	6	0
+20240216	yH181	Cg	wt	1000	MO	1000	0	0	0
+20240217	yH181	Cg	wt	0	MM	1000	71	71	0
+20240217	yH181	Cg	wt	100	MO	1000	9	8	1
+20240217	yH181	Cg	wt	1000	MO	1000	0	0	0
