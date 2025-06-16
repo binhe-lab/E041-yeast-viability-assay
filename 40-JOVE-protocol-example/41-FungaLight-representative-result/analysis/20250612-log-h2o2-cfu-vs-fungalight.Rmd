@@ -63,9 +63,28 @@ write_tsv(pData(dat), file = "../input/20240214-log-h2o2-cg-sample.tsv")
 
 
 # Gatting strategies {.tabset}
-Load all gates from specification file
+Gate specification. Note that these gates need to be adjusted for your specific instrument and data.
 ```{r}
-source("../script/20250612-FGL-flow-gate-specification.R")
+# outlier gate
+outlier.gate <- rectangleGate(filterId = "-outlier", "FSC.H" = c(1.2e5, 1e6), "SSC.H" = c(1e2, 1e6))
+# single cell gate
+polygon <- matrix(c(1e5, 1e5, 1e6, 1e6, 
+                    60, 105, 135,60), ncol = 2)
+colnames(polygon) <- c("FSC.H", "FSC.W")
+singlet.gate <- polygonGate(filterId = "singlet", .gate = polygon)
+
+# live cell gate
+polygon <- matrix(c(0, 10^4, 10^4, 0, # BL1.H, green
+                    10^2.2, 10^2.2, 0, 0),# BL3.H, red
+                  ncol = 2)
+colnames(polygon) <- c("BL1.H", "BL3.H")
+live.gate <- polygonGate(filterId = "live", .gate = polygon)
+# intermediate gate
+polygon <- matrix(c(10^3, 10^5.5, 10^5.5,   # BL1.H, green
+                    10^2.2, 10^2.2, 10^4.5),# BL3.H, red
+                  ncol = 2)
+colnames(polygon) <- c("BL1.H", "BL3.H")
+inter.gate <- polygonGate(filterId = "inter", .gate = polygon)
 ```
 
 ## Gating for singlets
@@ -255,14 +274,13 @@ p <- cfu_dye %>%
   pivot_longer(cols = c(p_live, p_intermediate), 
                names_to = "par", values_to = "perc") %>% 
   mutate(par = factor(par, levels = c("p_live", "p_intermediate"),
-                      labels = c("% live", "% intermediate"))) %>% 
+                      labels = c("% live", "% damaged"))) %>% 
   ggplot(aes(x = Treatment, y = perc, group = par)) +
   geom_bar(aes(fill = par), position = position_dodge(.9),
     stat = "summary", fun = "mean", width = 0.8) +
   geom_point(aes(shape = as.character(Date), color = par), 
              position = position_jitterdodge(jitter.width = 0.1,
-                                             dodge.width = 0.9),
-             size = 1.5, stroke = 1.2) + 
+                                             dodge.width = 0.9)) + 
   scale_fill_manual(NULL, values = c("gray70", "lightblue3")) +
   scale_color_manual(NULL, values = c("black", "steelblue")) +
   #ggplot(aes(x = Treatment, y = p_live, group = Method)) +
@@ -274,18 +292,19 @@ p <- cfu_dye %>%
                      limits = c(NA, 1.1), breaks = seq(0,1,0.5)) +
   scale_x_discrete(labels = h2o2.levels) +
   #coord_flip() + 
-  labs(x = bquote(H[2]*O[2]~(mM)), y = "% Live") +
+  labs(x = bquote(H[2]*O[2]~(mM)), y = "Percent single cells") +
   facet_wrap(~Method, nrow = 1) +
   theme(strip.background = element_blank(),
         strip.text = element_text(size = rel(0.9), face = 1),
         axis.text.x = element_text(size = rel(0.9), angle = 90, vjust = .5),
         axis.text.y = element_text(size = rel(0.9)),
-        axis.title = element_text(size = rel(0.9)),
-        legend.position = "top",
+        #axis.title = element_text(size = rel(0.9)),
+        panel.border = element_rect(color = "gray0", linewidth = 0.5),
+        legend.position = "right",
         panel.spacing = unit(1, "lines"))
 p
 ggsave("../output/20250613-perc-live-compare-dye-to-cfu.png",
-       width = 5, height = 4)
+       width = 6, height = 3)
 ```
 
 ## Statistical tests
