@@ -1,0 +1,3 @@
+FUN-1 stained _C. glabrata_ cells imaged by laser scanning confocal microscope (Leica SP8). The goal of this experiment to qualitatively examine the FUN-1 staining pattern in cells in different states and use both live and dead cells as reference to gauge the level of damage sustained in the 100 mM H2O2 treated sample.
+
+Live: mock-treated; Dead: heat-killed; Also dead: 1M H2O2 treated; Experimental group: 100 mM H2O2 treated. All treatment lasted 2h. All cells were grown identically to mid-log phase before the treatment. FUN-1 staining was performed following manufacturer's protocol in the GH staining media for 30 min. Images were taken 40-60 min after the start of staining, when the signal is relatively stable.
