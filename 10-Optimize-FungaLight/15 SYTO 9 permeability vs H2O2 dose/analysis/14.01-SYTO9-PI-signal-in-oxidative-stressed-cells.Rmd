@@ -1,6 +1,6 @@
 ---
 title: "SYTO9 and PI permeability (signal) as a function of oxidative damage"
-author: Bin He, originally by Hanxi Tang
+author: "Bin He, originally by Hanxi Tang"
 date: "2023-12-18, modified 2024-09-26, updated `r Sys.Date()`"
 output:
   html_notebook:
@@ -9,6 +9,10 @@ output:
     toc_float: true
     toc_depth: 4
     code_folding: hide
+  html_document:
+    toc: true
+    toc_depth: '4'
+    df_print: paged
 ---
 
 ```{r setup, message=FALSE}
@@ -18,38 +22,40 @@ require(openCyto)
 require(tidyverse)
 require(ggcyto)
 require(cowplot)
-#require(ggrdiges)
 ```
 
 ```{r}
 old <- theme_set(theme_minimal(base_size = 14) + panel_border(color = "gray20"))
 ```
 
+```{r}
+require(here)
+i_am("analysis/14.01-SYTO9-PI-signal-in-oxidative-stressed-cells.Rmd")
+```
+
 # Goal
-We observed an intermediate high-green high-red population most prominent in the 100 mM treated cells. This is different from what's shown in the FungaLight manual. We hypothesize that the high-green high-red popuplation are damaged cells that are more permeable to SYTO9 but not yet permeable to PI. We test this hypothesis by quantifying SYTO9 and PI staining signals in samples treated with increasing concentrations of hydrogen peroxide. To distinguish the signals in the red channel between SYTO9 and PI, we apply the two dyes separately.
+We observed an intermediate high-green high-red population most prominent in the 100 mM treated cells. This is different from what's shown in the FungaLight manual. We hypothesize that the high-green high-red popuplation are damaged cells that are more permeable to SYTO9 but not yet permeable to PI. 
 
 ![](../../../10-Optimize-FungaLight/11 Initial observation/output/fig1-staining-consistency-20240911.png)
 **Note the high green high red population in the 100 mM H2O2 treated _C. glabrata_ cells **
 
-# Import data
+**Our first goal** is to test this hypothesis by quantifying SYTO9 and PI staining signals in samples treated with increasing concentrations of hydrogen peroxide. To distinguish the signals in the red channel between SYTO9 and PI, we apply the two dyes separately.
+
+**Our second goal** is to establish each dye's staining pattern in mock-treated cells and optimize dye concentration.
+
+# Data importing
 > original FCS files are stored in RDSS/user/hanxi-tang/flow cytometry. FCS files are copied to the current directory
 
 ```{r}
 # use relative path to make it easier for collaboration
-data.path = paste0("../input/202311", 20:22, " Dilutions+0-1000mM/")
-# read all files into a list of three flowSets
-tmp <- map(data.path, \(x)
-           read.flowSet(
-             # the original values are already linearized. 
-             path = x, transformation = FALSE,
-             # only include FCS files
-             pattern = "\\.fcs$",
-             # change parameter names to R format
-             emptyValue = FALSE,  alter.names = TRUE,
-             # only load the height variables for the fluorescent parameters
-             column.pattern = ".H|FSC|SSC")
+data.path = here("input", "20231120 SYTO9 PI dilutions")
+dat0 <- read.flowSet(path = data.path, transformation = FALSE, 
+                       # the original values are already linearized. 
+                       emptyValue = FALSE,  alter.names = TRUE, 
+                       # change parameter names to R format
+                       column.pattern = ".H|FSC|SSC"
+                       # only load the height variables for the fluorescent parameters
 )
-dat0 <- rbind2(tmp[[1]], tmp[[2]]) |> rbind2(tmp[[3]])
 ```
 
 Simplify the sample names
@@ -67,7 +73,8 @@ sample <- data.frame(tmp) %>%
 rownames(sample) <- oriNames
 dat <- dat0
 pData(dat) = sample
-write_tsv(sample, file = "../input/20231222-SYTO9-PI-permeability-sample-info.tsv")
+write_tsv(sample, file = 
+            here("input", "20231222-SYTO9-PI-permeability-sample-info.tsv"))
 ```
 
 Set up factor levels
@@ -78,7 +85,7 @@ treat.levels = paste(c(0, 10, 100), "mM", sep = " ") |> c("1M")
 names(treat.levels) = c(0, 10, 100, 1000)
 ```
 
-# Gating strategies
+# Data preprocessing
 ## Gating for singlets
 >The following gaphing steps are used to gate singlets by FSC and SSC values. Only singlets are included in analysis.
 
@@ -127,12 +134,12 @@ polygon <- matrix(c(0, 10^2.5, 10^2.5, 0,
                     10^2.2, 10^2.2, 10^5, 10^5), ncol = 2)
 colnames(polygon) <- c("BL1.H", "BL3.H")
 PI.gate <- polygonGate(filterId = "PI-positive", .gate = polygon)
-ggcyto(ex, aes(x = BL1.H, y = BL3.H)) + geom_hex(bins = 128) + geom_gate(dead.gate) + geom_stats() + scPars + scale_x_logicle() + scale_y_logicle() 
+ggcyto(ex, aes(x = BL1.H, y = BL3.H)) + geom_hex(bins = 128) + geom_gate(PI.gate) + geom_stats() + scPars + scale_x_logicle() + scale_y_logicle() 
 ```
 Add this gate to the gatingSet
 
-```{r eval=FALSE, include=FALSE}
-gs_pop_add(gs, dead.gate, parent = "singlet", name = "PI-positive")
+```{r}
+gs_pop_add(gs, PI.gate, parent = "singlet", name = "PI-positive")
 recompute(gs)
 ```
 
@@ -155,31 +162,31 @@ ggcyto(ex, aes(x = BL1.H, y = BL3.H)) +
 ```
 Add this gate to the gatingSet
 
-```{r eval=FALSE, include=FALSE}
+```{r}
 gs_pop_add(gs, SYTO9.gate, parent = "singlet", name = "Intermediate")
 recompute(gs)
 ```
 
-## Gate for live population
-
+## Gate for unstained cells
+For SYTO9, which in theory stains all cells, this gate identifies poorly or unstained cells; for PI, this identifies live cells not permeable to PI.
 ```{r}
 scPars <- ggcyto_par_set(limits = list(x = c(0,1e5), y = c(0,1e5)))
 ex <- Subset(dat[c(9,12)], singlet.gate)
-polygon <- matrix(c(0, 10^5, 10^5, 0,     # BL1.H, green
-                    10^2.2, 10^2.2, 0, 0),# BL3.H, red
+polygon <- matrix(c(0, 10^2, 10^2, 0,     # BL1.H, green
+                    10^2, 10^2, 0, 0),# BL3.H, red
                   ncol = 2)
 colnames(polygon) <- c("BL1.H", "BL3.H")
-live.gate <- polygonGate(filterId = "live", boundaries = polygon)
+unstained.gate <- polygonGate(filterId = "unstained", .gate = polygon)
 ggcyto(ex, aes(x = BL1.H, y = BL3.H)) + 
   geom_hex(bins = 128) + 
-  geom_gate(live.gate) + geom_stats() + scPars + 
+  geom_gate(unstained.gate) + geom_stats(adjust = c(2, 2)) + scPars + 
   scale_x_logicle() + scale_y_logicle() 
 ```
 
 Add this gate to the gatingSet
 
-```{r eval=FALSE, include=FALSE}
-gs_pop_add(gs, live.gate, parent = "singlet", name = "live")
+```{r}
+gs_pop_add(gs, unstained.gate, parent = "singlet", name = "unstained")
 recompute(gs)
 ```
 
@@ -187,7 +194,7 @@ recompute(gs)
 Export the counts and MFI separately
 ```{r}
 # we are only interested in the populations after singlet gating
-nodes <- c("singlet", "PI-positive", "Intermediate", "live")
+nodes <- c("singlet", "PI-positive", "Intermediate", "unstained")
 # get the event count
 gated_cnt <- gs_pop_get_stats(gs, nodes, type = "count")
 # get the MFI for each parameter in each population of interest
@@ -201,12 +208,13 @@ gated_stats <- full_join(gated_cnt, gated_mfi, by = c("sample", "pop")) %>%
   right_join(pData(gs), by = c("sample" = "name")) %>% 
   relocate(Date, Treatment, Dye, Dilution, .after = sample) %>% 
   relocate(sample, .after = last_col())
-write_tsv(gated_stats, file = "../input/20240430-Cg-SYTO9-gated-stats.tsv")
+write_tsv(gated_stats, file = here("output","20260611-Cg-SYTO9-gated-stats.tsv"))
 ```
 
-# Plotting and testing
+# Analysis 1: SYTO 9 signal over peroxide dose
+SYTO 9 is used in this combo dye to stain "all cells", live or dead. However, previous studies and our observation led us to hypothesize that SYTO 9 staining intensity is higher in samples receiving a stronger dose of oxidative stress. This combined with SYTO 9 signal bleeding into the red channel could explain the "intermediate population" we observed. Here, we test this hypothesis by comparing SYTO 9 single stain patterns in samples treated with different levels of peroxide stress.
 
-## Overview, one replicate
+## Overview of staining pattern with one replicate
 ```{r}
 scPars <- ggcyto_par_set(limits = list(x = c(0,10^5.5), y = c(0,10^5.5)))
 
@@ -240,7 +248,11 @@ p2 <- ggcyto(gs[select], subset = "singlet",
   p.common + 
   theme(strip.text = element_blank()) + scPars
 plot_grid(as.ggplot(p2), as.ggplot(p1), nrow = 2, align = "h")
-ggsave("../output/20250105-fig3a-PI-pos-intermediate-pop.png",
+```
+
+save the plot
+```{r}
+ggsave(here("output", "20250105-fig3a-PI-pos-intermediate-pop.png"),
        width = 6, height = 3.5)
 ```
 
@@ -275,9 +287,14 @@ p <- tmp %>%
                      labels = scales::percent) +
   xlab(bquote(H[2]*O[2]~(mM)))
 p
+```
+
+save the plot
+```{r}
 ggsave("../output/20250106-fig3b-percent-PI-pos-SYTO9-inter-over-treat.png",
        width = 3.8, height = 2.8)
 ```
+
 Statistical test (ANOVA)
 1. For SYTO9
 ```{r}
@@ -318,9 +335,14 @@ p <- tmp %>%
                      labels = scales::label_number(scale = 1e-2))# +
   #theme(strip.text.x = element_text(margin = margin(0.4,0,0.4,0, "cm")))
 p
-ggsave("../output/20250106-fig3c-MFI-SYTO9-inter-over-treat.png",
+```
+
+save the plot
+```{r}
+ggsave(here("output", "20250106-fig3c-MFI-SYTO9-inter-over-treat.png"),
        width = 3.8, height = 2.8)
 ```
+
 Statistical test (ANOVA)
 1. For SYTO9, green channel
 ```{r}
@@ -333,6 +355,153 @@ summary(lm)
 lm <- lm(MFI ~ Treatment, data = dplyr::filter(tmp, Channel == "Red"))
 summary(lm)
 ```
+
+# Analysis 2: dye concentrations
+The FungaLight manual recommends using the stock dye at 1000x dilution. We would like to determine how dye concentrations affect the staining pattern and whether the recommended 1000x dilution is optimal. Our criteria for optimality include:
+
+1. Minimal "dead" and "damaged" populations in the mock-treated sample, i.e., not over-stained
+2. Nearly all cells in the 1M H2O2 treated sample show up as dead, i.e., not under-stained, and
+3. Consistent staining pattern across replicates.
+
+To visualize the patterns above, we will plot the unstained and damaged population percentages for SYTO 9, and unstained and PI-positive percentages for PI across the different dye dilutions and treatment conditions. 
+
+## Illustration of the level of over- and under-staining with one replicate
+```{r}
+scPars <- ggcyto_par_set(limits = list(x = c(0,10^5.5), y = c(0,10^5.5)))
+
+# PI positive
+select <- with(pData(gs), 
+               Date == "2023-11-20" &  Treatment == "0" & Dye == "PI")
+p1 <- ggcyto(gs[select], subset = "singlet",
+            aes(x = BL1.H, y = BL3.H)) + 
+  geom_hex(bins = 128) + 
+  geom_gate(PI.gate) + 
+  geom_stats(digits = 1, adjust = c(1.5, 0.3)) +
+  facet_wrap(~factor(Dilution, levels = c("250", "500", "1000", "2000"),
+                     labels = c("250x", "500x", "1000x", "2000x")), nrow = 1) +
+  p.common +
+  theme(strip.text = element_blank()) + scPars
+
+# SYTO9 intermediate
+select <- with(pData(gs), 
+               Date == "2023-11-20" &  Treatment == "0" & Dye == "SYTO9")
+p2 <- ggcyto(gs[select], subset = "singlet",
+            aes(x = BL1.H, y = BL3.H)) + 
+  geom_hex(bins = 128) + 
+  geom_gate(SYTO9.gate) +
+  geom_stats(digits = 2, adjust = c(0.1, 1.2)) +
+  facet_wrap(~factor(Dilution, levels = c("250", "500", "1000", "2000"),
+                     labels = c("250x", "500x", "1000x", "2000x")), nrow = 1) +
+  p.common + 
+  theme(strip.text = element_blank()) + scPars
+plot_grid(as.ggplot(p2), as.ggplot(p1), nrow = 2, align = "h")
+```
+## Plot gated pop frequencies across treatments and dye dilutions
+Prepare the summary stats
+```{r}
+tmp <- gated_stats %>% 
+  group_by(Date, Treatment, Dye, Dilution) %>% 
+  mutate(perc = count / count[pop == "singlet"],
+         .after = count) %>% 
+  # the following filtering function removes the singlet gate and retains only the relevant subpopulation
+  # count > 2 remove rows with the mismatching population and dye, e.g., 
+  # PI-positive and SYTO9
+  dplyr::filter(pop != "singlet", count > 2) %>% 
+  mutate(Treatment = fct_inorder(Treatment),
+         Dilution = factor(Dilution, levels = c(250, 500, 1000, 2000),
+                           labels = c("250x", "500x", "1000x", "2000x")),
+         Dye = factor(Dye, levels = c("SYTO9", "PI")))
+```
+
+Designing the plot for SYTO 9
+```{r}
+pd = position_dodge(width = 0.9)
+p <- tmp |>
+  dplyr::filter(Dye == "SYTO9", pop %in% c("unstained", "Intermediate")) |>
+  ggplot(aes(x = Treatment, y = perc, group = Dilution)) +
+  geom_bar(aes(fill = Dilution), stat = "summary", fun = "mean",
+           position = pd, alpha = 0.9) +
+  #stat_summary(fun.data = "mean_sdl", fun.args = list(mult = 1),
+  #             position = pd,
+  #             geom = "errorbar", width = 0.2, color = "black") +
+  geom_point(position = pd, color = "gray40", size = .5, shape = 3) +
+  facet_wrap(~pop, nrow = 2, scales = "free_y",
+             labeller = labeller(pop = c("Intermediate" = '"Intermediate"', 
+                                         "unstained" = "Unstained"))) +
+  scale_fill_viridis_d(name = "SYTO 9\nDilution", option = "D", begin = 0.2) +
+  scale_y_continuous(name = "Percentage", labels = scales::percent) +
+  xlab(bquote(H[2]*O[2]~(mM))) +
+  theme(strip.text = element_text(size = 14))
+
+p
+```
+
+save the plot
+```{r}
+ggsave(here("output", "20260612-SYTO9-Dilutions-Gated-Percentage-Plot.png"),
+       plot = p + theme(
+         legend.title = element_text(size = rel(0.6)),
+         legend.text = element_text(size = rel(0.6))
+       ), width = 5, height = 4)
+```
+> - the highest dye concentration (250x) causes over-staining in the mock-treated sample, as evidenced by the high percentage of the intermediate population.
+> - the lowest dye concentration (2000x) causes under-staining, shown by the high percentage of unstained population in the mock treated sample.
+> - the 500x and 1000x dilutions provide a good compromise between over-staining and under-staining, with the 500x dilution giving a higher percentage of the intermediate population in the mock-treated sample, and the 1000x dilution giving a higher percentage of unstained cells in the mock-treated sample.
+> - both 500x and 1000x dilutions could be used, and the gate boundaries can be further optimized to achieve a better performance.
+
+
+Designing the plot for PI
+```{r}
+p <- tmp |>
+  # skip 1000 mM H2O2 because essentially all cells are PI-positive
+  dplyr::filter(Dye == "PI", pop == "PI-positive", Treatment != "1000") |>
+  ggplot(aes(x = Treatment, y = perc, group = Dilution)) +
+  geom_bar(aes(fill = Dilution), stat = "summary", fun = "mean",
+           position = pd, alpha = 0.9) +
+  #stat_summary(fun.data = "mean_sdl", fun.args = list(mult = 1),
+  #             position = pd,
+  #             geom = "errorbar", width = 0.2, color = "black") +
+  geom_point(position = pd, color = "gray10", size = .5, shape = 3) +
+  scale_fill_viridis_d(name = "Dye dilution", option = "D", begin = 0.2) +
+  scale_y_continuous(name = "Percentage", labels = scales::percent) +
+  xlab(bquote(H[2]*O[2]~(mM))) +
+  theme(strip.text = element_text(size = 14))
+
+p
+```
+> - even at the lowest dilution (250x), there is minimal PI-positive population in the mock-treated sample, suggesting that over-staining is not a concern for PI at the tested dilutions.
+> - the 100 mM H2O2 treated group shows the biggest differences among the dilutions, with the 250x dilution staining a noticeably higher fraction of cells as PI-positive. Whether this is due to over-staining or better staining of the damaged cells in this group is not clear, and the absolute level is still low compared to the 1M H2O2 treated group, which is not shown here because all four dilutions give essentially 100% PI-positive cells.
+
+```{r}
+ggsave(here("output", "20260612-PI-Dilutions-Gated-Percentage-Plot.png"),
+       plot = p + theme(
+         legend.title = element_text(size = rel(0.6)),
+         legend.text = element_text(size = rel(0.6))
+       ), width = 5, height = 3)
+```
+
+Inspect the flow density plots for PI-positive population across replicates for the 100 mM treated group
+```{r}
+# PI positive
+select <- with(pData(gs), 
+               Treatment == "100" & Dye == "PI")
+p1 <- ggcyto(gs[select], subset = "singlet",
+            aes(x = BL1.H, y = BL3.H)) + 
+  geom_hex(bins = 128) + 
+  geom_gate(PI.gate) + 
+  geom_stats(digits = 1, adjust = c(1.5, 0.3)) +
+  # reorder the facets to make the dilutions in the same order as the bar plot
+  facet_grid(Date~factor(Dilution, levels = c("250", "500", "1000", "2000"),
+                         labels = c("250x", "500x", "1000x", "2000x"))) +
+  p.common +
+  scPars
+p1
+```
+> - in all three days of experiments, the 250x dilution all gives the higher %PI+, but there is a lot of day-to-day variations.
+> - in the 11/21 experiment, the %PI+ for the non-250x dilution are higher than the other two days.
+> - overall, the impact of PI dilution in the range tested is much less compared with SYTO 9.
+
+
 
 ---
 

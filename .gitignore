@@ -5,7 +5,7 @@
 .Rhistory
 .RData
 .Ruserdata
-*.nb.html
+# *.nb.html
 rsconnect/
 # flow cytometry Attune experiment file
 *.apx
